@@ -1,0 +1,7 @@
+{
+  "name": "JobWork Inventory Tracker",
+  "description": "A comprehensive inventory management tool for tracking outward and inward job work with vendor reconciliation and Google Sheets integration support.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
