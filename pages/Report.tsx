@@ -1,345 +1,151 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { AppState } from '../types';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { AppState, OutwardEntry } from '../types';
 import { Card, Button, Select, Input } from '../components/ui';
-import { syncDataToSheets, signIn, isSignedIn, initGapi } from '../services/sheets';
-import { RefreshCw, ChevronDown, ChevronUp, Settings, Trash2 } from 'lucide-react';
+import { syncDataToSheets, initGapi } from '../services/sheets';
+import { RefreshCw, ChevronDown, ChevronUp, Settings, Trash2, FileDown, Printer } from 'lucide-react';
+import PrintChallan from '../components/PrintChallan';
 
 interface ReportProps {
   state: AppState;
-  markSynced: (result: { 
-    outwards: string[], 
-    inwards: string[], 
-    vendors: string[], 
-    items: string[], 
-    works: string[] 
-  }) => void;
+  markSynced: (newState: AppState) => void;
 }
 
 const Report: React.FC<ReportProps> = ({ state, markSynced }) => {
   const [syncStatus, setSyncStatus] = useState<string>('');
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isGapiReady, setIsGapiReady] = useState(false);
-  
-  // Credentials State
   const [apiKey, setApiKey] = useState(localStorage.getItem('GOOGLE_API_KEY') || '');
   const [clientId, setClientId] = useState(localStorage.getItem('GOOGLE_CLIENT_ID') || '');
   const [showConfig, setShowConfig] = useState(false);
+  const [printEntry, setPrintEntry] = useState<OutwardEntry | null>(null);
+  const tokenClient = useRef<any>(null);
 
-  const [selectedVendorFilter, setSelectedVendorFilter] = useState('');
-  const [expandedVendor, setExpandedVendor] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Check if we can already use GAPI (if previously initialized)
-    const checkGapi = () => {
-      const gapi = (window as any).gapi;
-      if (gapi && gapi.auth2 && gapi.client) {
-        // Assume ready if loaded, but we might need to verify init status
-        // Usually if auth2 is there, it's initialized
-        if (gapi.auth2.getAuthInstance()) {
-           setIsGapiReady(true);
-        }
-      } 
-      
-      // Auto-init if keys exist and not ready
-      if ((!gapi || !gapi.auth2) && apiKey && clientId) {
-         handleInitGapi();
-      }
-    };
-    // Small delay to allow script load
-    const timer = setTimeout(checkGapi, 1000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const handleInitGapi = async () => {
-    if (!apiKey || !clientId) {
-      setSyncStatus('Please enter API Key and Client ID');
-      return;
-    }
-    
-    setIsSyncing(true);
-    setSyncStatus('Initializing Google Services...');
-    try {
-      await initGapi(apiKey, clientId);
-      localStorage.setItem('GOOGLE_API_KEY', apiKey);
-      localStorage.setItem('GOOGLE_CLIENT_ID', clientId);
-      setIsGapiReady(true);
-      setSyncStatus('Ready to sync');
-      setShowConfig(false);
-    } catch (e: any) {
-      console.error("GAPI Init Error", e);
-      let msg = '';
-      
-      // Handle various GAPI error formats
-      if (e?.error?.message) {
-        msg = e.error.message;
-      } else if (e?.details) {
-        msg = e.details;
-      } else if (e?.message) {
-        msg = e.message;
-      } else if (typeof e?.error === 'string') {
-        msg = e.error;
-      } else {
-        msg = JSON.stringify(e);
-      }
-      
-      if (msg.includes('origin_mismatch')) {
-        msg = "Origin mismatch. Add this URL to 'Authorized JavaScript origins' in Google Cloud Console.";
-      }
-      
-      setSyncStatus('Init Failed: ' + msg);
-      setShowConfig(true); // Re-open config to let user fix
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleClearCredentials = () => {
-    localStorage.removeItem('GOOGLE_API_KEY');
-    localStorage.removeItem('GOOGLE_CLIENT_ID');
-    setApiKey('');
-    setClientId('');
-    setSyncStatus('');
-    setIsGapiReady(false);
-  };
-
-  // --- Calculations ---
-  const vendorStats = useMemo(() => {
-    return state.vendors.map(vendor => {
-      const vendorOutwards = state.outwardEntries.filter(e => e.vendorId === vendor.id);
-      
-      let totalOutQty = 0;
-      let totalInQty = 0;
-      let totalPendingWeight = 0;
-
-      // Detailed Challan Analysis
-      const challans = vendorOutwards.map(out => {
-        const inwardEntries = state.inwardEntries.filter(i => i.outwardChallanId === out.id);
-        const inQty = inwardEntries.reduce((sum, i) => sum + i.qty, 0);
-        const pendingQty = out.qty - inQty;
-        
-        totalOutQty += out.qty;
-        totalInQty += inQty;
-        
-        // Approx pending weight based on average weight per unit of outward
-        const avgWeight = out.qty > 0 ? out.materialWeight / out.qty : 0;
-        totalPendingWeight += (pendingQty * avgWeight);
-
-        return {
-          ...out,
-          inQty,
-          pendingQty,
-          status: pendingQty <= 0 ? 'Completed' : (inQty > 0 ? 'Partial' : 'Pending')
-        };
+  const initTokenClient = (id: string) => {
+    const google = (window as any).google;
+    if (google?.accounts?.oauth2) {
+      tokenClient.current = google.accounts.oauth2.initTokenClient({
+        client_id: id,
+        scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
+        callback: async (resp: any) => {
+          if (resp.error) {
+             setSyncStatus(`Auth Error: ${resp.error}`);
+             setIsSyncing(false);
+             return;
+          }
+          await performSync();
+        },
       });
+    }
+  };
 
-      return {
-        vendor,
-        totalOutQty,
-        totalInQty,
-        pendingQty: totalOutQty - totalInQty,
-        totalPendingWeight,
-        challans
-      };
-    });
-  }, [state]);
-
-  const filteredStats = selectedVendorFilter 
-    ? vendorStats.filter(v => v.vendor.id === selectedVendorFilter)
-    : vendorStats;
-
-  const unsyncedCount = 
-    state.outwardEntries.filter(e => !e.synced).length + 
-    state.inwardEntries.filter(e => !e.synced).length +
-    state.vendors.filter(e => !e.synced).length +
-    state.items.filter(e => !e.synced).length +
-    state.workTypes.filter(e => !e.synced).length;
-
-  // --- Handlers ---
+  const performSync = async () => {
+    setSyncStatus('Syncing...');
+    const res = await syncDataToSheets(state, markSynced);
+    setSyncStatus(res.message);
+    setIsSyncing(false);
+  };
 
   const handleSync = async () => {
-    setIsSyncing(true);
-    setSyncStatus('Syncing...');
-    
+    if (!apiKey || !clientId) { setShowConfig(true); return; }
+    setIsSyncing(true); setSyncStatus('Connecting...');
     try {
-        const gapi = (window as any).gapi;
-        
-        // Ensure GAPI is actually initialized
-        if (!gapi || !gapi.auth2 || !gapi.auth2.getAuthInstance()) {
-             setSyncStatus('GAPI lost or not initialized. Re-connecting...');
-             await handleInitGapi();
-             // Check again
-             if (!gapi.auth2 || !gapi.auth2.getAuthInstance()) {
-               throw new Error("Could not initialize Google Auth");
-             }
-        }
-
-        if (!isSignedIn()) {
-          await signIn();
-        }
-        
-        const result = await syncDataToSheets(state, markSynced);
-        setSyncStatus(result.message);
+      await initGapi(apiKey, clientId);
+      if (!tokenClient.current) initTokenClient(clientId);
+      tokenClient.current.requestAccessToken({ prompt: '' });
+      localStorage.setItem('GOOGLE_API_KEY', apiKey); 
+      localStorage.setItem('GOOGLE_CLIENT_ID', clientId);
     } catch (e: any) {
-        console.error("Sync Error", e);
-        let msg = e.message || e.error || JSON.stringify(e);
-        if (typeof msg === 'object') msg = JSON.stringify(msg);
-        setSyncStatus('Sync Error: ' + msg);
-    } finally {
-        setIsSyncing(false);
+      console.error(e);
+      setSyncStatus(`Error: ${e.message || 'Check Console'}`);
+      setIsSyncing(false);
+      setShowConfig(true);
     }
   };
+
+  const handleDownloadCSV = () => {
+    const headers = "Vendor,ChallanNo,OutwardDate,PendingDays,SKU,OutQty,InQty,PendingQty,TotalWt,MatWt,Status\n";
+    const rows = stats.flatMap((s:any) => s.rows.map((r:any) => {
+        const item = state.items.find((i:any) => i.id === r.skuId);
+        const days = Math.floor((new Date().getTime() - new Date(r.date).getTime()) / (1000 * 60 * 60 * 24));
+        return `${s.vendor.name},${r.challanNo},${r.date.split('T')[0]},${days},${item?.sku || ''},${r.qty},${r.inQty},${r.pending},${r.totalWeight},${r.materialWeight},${r.pending > 0 ? 'Pending' : 'Completed'}`;
+    })).join("\n");
+    const blob = new Blob([headers + rows], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `JobWork_Recon_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+  };
+
+  const stats = useMemo(() => {
+    return state.vendors.map(v => {
+      const outs = state.outwardEntries.filter(e => e.vendorId === v.id);
+      const rows = outs.map(o => {
+        const inQty = state.inwardEntries.filter(i => i.outwardChallanId === o.id).reduce((s, i) => s + i.qty, 0);
+        return { ...o, inQty, pending: o.qty - inQty };
+      });
+      const pendingTotal = rows.reduce((s, r) => s + r.pending, 0);
+      return { vendor: v, pendingTotal, rows: rows.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()) };
+    }).filter(x => x.rows.length > 0);
+  }, [state]);
+
+  if (printEntry) return <PrintChallan entry={printEntry} state={state} onClose={() => setPrintEntry(null)} />;
+
+  const unsyncedCount = state.outwardEntries.filter(e=>!e.synced).length + state.inwardEntries.filter(e=>!e.synced).length + state.vendors.filter(e=>!e.synced).length;
 
   return (
     <div className="p-4 pb-24 max-w-2xl mx-auto">
-      
-      {/* Sync Control */}
       <Card className="bg-blue-50 border-blue-100">
-        <div className="flex justify-between items-start">
-          <div className="flex-1">
-            <h3 className="font-bold text-blue-900 flex items-center">
-              Google Sheets Sync 
-              <button onClick={() => setShowConfig(!showConfig)} className="ml-2 text-blue-400 hover:text-blue-700">
-                <Settings size={16} />
-              </button>
-            </h3>
-            <p className="text-sm text-blue-700">{unsyncedCount} records pending upload</p>
+        <div className="flex justify-between items-center mb-2">
+          <div>
+            <h3 className="font-bold text-blue-900">Google Sync ({unsyncedCount} pending)</h3>
           </div>
-          
-          {isGapiReady ? (
-            <Button 
-              onClick={handleSync} 
-              disabled={isSyncing || unsyncedCount === 0}
-              className="w-auto px-6 py-2 flex items-center bg-blue-600 hover:bg-blue-700"
-            >
-              <RefreshCw size={18} className={`mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Syncing...' : 'Sync Now'}
-            </Button>
-          ) : (
-             <Button onClick={() => setShowConfig(true)} className="w-auto px-4 py-2 bg-orange-500 hover:bg-orange-600">
-               Setup Sync
+          <div className="flex space-x-2">
+             <Button onClick={handleSync} disabled={isSyncing} className="w-auto px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700">
+                {isSyncing ? '...' : 'Sync & Download'}
              </Button>
-          )}
+             <button onClick={() => setShowConfig(!showConfig)} className="text-blue-400 p-2"><Settings size={20} /></button>
+          </div>
         </div>
-        
-        {/* Setup Config Area */}
+        <Button onClick={handleDownloadCSV} variant="secondary" className="text-xs py-2 w-full mb-2"><FileDown size={14} className="mr-2"/> Download CSV</Button>
+        {syncStatus && <p className="text-xs font-mono text-blue-800 break-all bg-white p-2 rounded">{syncStatus}</p>}
         {showConfig && (
-          <div className="mt-4 p-4 bg-white rounded border border-blue-200">
-            <h4 className="text-sm font-bold mb-2">Drive API Configuration</h4>
-            <Input 
-              label="Client ID" 
-              value={clientId} 
-              onChange={e => setClientId(e.target.value)} 
-              placeholder="e.g. 123...apps.googleusercontent.com"
-            />
-            <Input 
-              label="API Key" 
-              value={apiKey} 
-              onChange={e => setApiKey(e.target.value)} 
-              placeholder="e.g. AIzaSy..."
-            />
-            <div className="flex justify-between mt-4">
-              <button onClick={handleClearCredentials} className="text-red-500 text-sm flex items-center">
-                <Trash2 size={14} className="mr-1" /> Clear
-              </button>
-              <div className="flex space-x-2">
-                <button onClick={() => setShowConfig(false)} className="px-3 py-2 text-slate-500">Cancel</button>
-                <Button onClick={handleInitGapi} disabled={isSyncing} className="w-auto">
-                  {isSyncing ? 'Connecting...' : 'Connect Service'}
-                </Button>
-              </div>
-            </div>
-            <p className="text-xs text-slate-400 mt-2">Credentials are saved to your browser.</p>
+          <div className="mt-4 p-4 bg-white rounded border">
+            <Input label="Client ID" value={clientId} onChange={e => setClientId(e.target.value)} />
+            <Input label="API Key" value={apiKey} onChange={e => setApiKey(e.target.value)} />
           </div>
         )}
-
-        {syncStatus && <p className="text-xs text-center mt-2 font-mono text-blue-800 break-words">{syncStatus}</p>}
       </Card>
 
-      {/* Filter */}
-      <div className="mb-4">
-        <Select label="Filter by Vendor" value={selectedVendorFilter} onChange={e => setSelectedVendorFilter(e.target.value)}>
-          <option value="">All Vendors</option>
-          {state.vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-        </Select>
-      </div>
-
-      {/* Vendor Cards */}
-      <div className="space-y-4">
-        {filteredStats.map(stat => (
-          <div key={stat.vendor.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            {/* Header / Summary */}
-            <div 
-              className="p-4 flex justify-between items-center cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors"
-              onClick={() => setExpandedVendor(expandedVendor === stat.vendor.id ? null : stat.vendor.id)}
-            >
-              <div>
-                <h3 className="font-bold text-lg">{stat.vendor.name}</h3>
-                <div className="text-sm text-slate-500 mt-1">
-                   Pending: <span className="font-semibold text-orange-600">{stat.pendingQty} Qty</span> 
-                   <span className="mx-1">•</span> 
-                   Est. Wt: {stat.totalPendingWeight.toFixed(2)}
-                </div>
-              </div>
-              {expandedVendor === stat.vendor.id ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
-            </div>
-
-            {/* Detailed Table (Expanded) */}
-            {expandedVendor === stat.vendor.id && (
-              <div className="p-4 border-t border-slate-100 bg-white">
-                {stat.challans.length === 0 ? (
-                  <p className="text-center text-slate-400 text-sm">No transactions found.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                      <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b">
-                        <tr>
-                          <th className="px-2 py-2">Date/Challan</th>
-                          <th className="px-2 py-2">Item</th>
-                          <th className="px-2 py-2 text-right">Out</th>
-                          <th className="px-2 py-2 text-right">In</th>
-                          <th className="px-2 py-2 text-right">Bal</th>
-                          <th className="px-2 py-2">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {stat.challans.map(ch => {
-                          const item = state.items.find(i => i.id === ch.skuId);
-                          return (
-                            <tr key={ch.id}>
-                              <td className="px-2 py-2">
-                                <div className="font-medium">{ch.challanNo}</div>
-                                <div className="text-xs text-slate-400">{ch.date.split('T')[0]}</div>
-                              </td>
-                              <td className="px-2 py-2 text-slate-600">{item?.sku}</td>
-                              <td className="px-2 py-2 text-right font-medium">{ch.qty}</td>
-                              <td className="px-2 py-2 text-right text-green-600">{ch.inQty}</td>
-                              <td className="px-2 py-2 text-right font-bold text-orange-600">{ch.pendingQty}</td>
-                              <td className="px-2 py-2">
-                                <span className={`text-[10px] px-2 py-1 rounded-full font-semibold
-                                  ${ch.status === 'Completed' ? 'bg-green-100 text-green-700' : 
-                                    ch.status === 'Partial' ? 'bg-yellow-100 text-yellow-700' : 
-                                    'bg-red-100 text-red-700'}`}>
-                                  {ch.status}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
+      {stats.map(s => (
+        <div key={s.vendor.id} className="bg-white rounded-xl shadow-sm border border-slate-200 mb-4 overflow-hidden">
+          <div className="p-4 bg-slate-50 flex justify-between">
+             <div className="font-bold text-lg">{s.vendor.name}</div>
+             <div className={`${s.pendingTotal > 0 ? 'text-orange-600' : 'text-green-600'} font-bold`}>{s.pendingTotal} Pending</div>
           </div>
-        ))}
-        
-        {filteredStats.length === 0 && (
-          <div className="text-center py-8 text-slate-400">
-            No vendor data found.
+          <div className="divide-y divide-slate-100">
+            {s.rows.map(r => {
+               const item = state.items.find(i => i.id === r.skuId);
+               const days = Math.floor((new Date().getTime() - new Date(r.date).getTime()) / (1000 * 60 * 60 * 24));
+               return (
+                 <div key={r.id} className="p-3 text-sm">
+                   <div className="flex justify-between items-center mb-1">
+                      <span className="font-mono font-bold text-slate-600">{r.challanNo}</span>
+                      <span className="text-xs text-slate-400">{r.date.split('T')[0]}</span>
+                      <button onClick={() => { setPrintEntry(r); setTimeout(()=>window.print(),100); }} className="text-blue-500 hover:bg-blue-50 p-1 rounded"><Printer size={14}/></button>
+                   </div>
+                   <div className="flex justify-between items-center mb-1">
+                      <span className="font-bold text-slate-800">{item?.sku}</span>
+                      <span className="font-mono">{r.inQty} / {r.qty}</span>
+                   </div>
+                   {r.pending > 0 ? (
+                      <div className="text-xs text-orange-500 font-bold text-right">{r.pending} PENDING ({days} Days)</div>
+                   ) : (
+                      <div className="text-xs text-green-600 font-bold text-right">COMPLETED</div>
+                   )}
+                 </div>
+               );
+            })}
           </div>
-        )}
-      </div>
+        </div>
+      ))}
+      {!stats.length && <div className="text-center text-slate-400 mt-10">No data found.</div>}
     </div>
   );
 };

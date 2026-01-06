@@ -1,7 +1,7 @@
 export interface Vendor {
   id: string;
   name: string;
-  code: string; // e.g., "ABC"
+  code: string;
   synced?: boolean;
 }
 
@@ -20,32 +20,40 @@ export interface WorkType {
 
 export interface OutwardEntry {
   id: string;
-  date: string; // ISO string
+  date: string;
   vendorId: string;
   challanNo: string;
   skuId: string;
   qty: number;
+  comboQty?: number;
   totalWeight: number;
   pendalWeight: number;
   materialWeight: number;
   workId: string;
-  photo?: string; // Base64
-  photoUrl?: string; // Drive URL
+  photo?: string;
+  photoUrl?: string;
   remarks?: string;
+  enteredBy?: string;
+  checkedBy?: string;
   synced?: boolean;
 }
 
 export interface InwardEntry {
   id: string;
   date: string;
-  outwardChallanId: string; // Link to OutwardEntry
-  vendorId: string; // Redundant but useful for indexing
+  outwardChallanId: string;
+  vendorId: string;
   skuId: string;
   qty: number;
+  comboQty?: number;
   totalWeight: number;
   pendalWeight: number;
   materialWeight: number;
   remarks?: string;
+  enteredBy?: string;
+  checkedBy?: string;
+  photo?: string;
+  photoUrl?: string;
   synced?: boolean;
 }
 
