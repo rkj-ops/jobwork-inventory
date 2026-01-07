@@ -26,9 +26,9 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
   useEffect(() => {
     if (selectedOutward) {
       setFormData({
-        date: today, qty: selectedOutward.qty.toString(), comboQty: selectedOutward.comboQty?.toString() || '',
-        totalWeight: selectedOutward.totalWeight.toString(), pendalWeight: selectedOutward.pendalWeight.toString(),
-        materialWeight: selectedOutward.materialWeight.toString(), remarks: '', enteredBy: '', checkedBy: '', photo: '', markComplete: false
+        date: today, qty: '', comboQty: '',
+        totalWeight: '', pendalWeight: '',
+        materialWeight: '', remarks: '', enteredBy: '', checkedBy: '', photo: '', markComplete: false
       });
     }
   }, [selectedOutward]);
@@ -57,6 +57,23 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
   const handleSubmit = () => {
     if (!selectedOutwardId || !formData.qty) return alert("Select Challan & Qty");
     
+    // VALIDATION
+    if (selectedOutward) {
+        const previousInwards = state.inwardEntries.filter(i => i.outwardChallanId === selectedOutwardId);
+        const totalInwardQty = previousInwards.reduce((acc, curr) => acc + curr.qty, 0) + parseFloat(formData.qty);
+        const totalInwardCombo = previousInwards.reduce((acc, curr) => acc + (curr.comboQty || 0), 0) + (parseFloat(formData.comboQty) || 0);
+
+        if (totalInwardQty > selectedOutward.qty) {
+            alert(`Error: Total Inward Qty (${totalInwardQty}) exceeds Outward Qty (${selectedOutward.qty})!`);
+            return;
+        }
+
+        if (selectedOutward.comboQty && totalInwardCombo > selectedOutward.comboQty) {
+             alert(`Error: Total Combo Qty (${totalInwardCombo}) exceeds Outward Combo Qty (${selectedOutward.comboQty})!`);
+             return;
+        }
+    }
+
     // Ensure valid date
     const dateToSave = formData.date ? new Date(formData.date).toISOString() : new Date().toISOString();
 

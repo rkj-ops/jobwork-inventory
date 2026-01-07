@@ -22,13 +22,20 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
       </div>
 
       <div className="flex justify-between mb-6 text-sm">
-        <div>
-          <p><strong>Vendor:</strong> {vendor?.name} ({vendor?.code})</p>
+        <div className="flex-1">
+          <p className="text-xs text-gray-500 uppercase">Vendor</p>
+          <p className="text-2xl font-bold uppercase">{vendor?.name} ({vendor?.code})</p>
         </div>
-        <div className="text-right">
-          <p><strong>Challan No:</strong> {entry.challanNo}</p>
+        <div className="text-right flex-1">
+          <div className="mb-2">
+             <p className="text-xs text-gray-500 uppercase">Challan No</p>
+             <p className="text-2xl font-bold uppercase">{entry.challanNo}</p>
+          </div>
+          <div className="mb-2">
+             <p className="text-xs text-gray-500 uppercase">Work Type</p>
+             <p className="text-xl font-bold uppercase">{work?.name}</p>
+          </div>
           <p><strong>Date:</strong> {new Date(entry.date).toLocaleDateString()}</p>
-          <p><strong>Work:</strong> {work?.name}</p>
         </div>
       </div>
 

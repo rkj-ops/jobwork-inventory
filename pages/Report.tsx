@@ -98,6 +98,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             : null;
         const vendor = state.vendors.find(v => v.id === o.vendorId);
         const item = state.items.find(i => i.id === o.skuId);
+        const work = state.workTypes.find(w => w.id === o.workId);
         
         let pending = o.qty - inQty;
         const comboPending = (o.comboQty || 0) - inComboQty;
@@ -110,6 +111,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             vendorName: vendor?.name || 'Unknown',
             vendorCode: vendor?.code || 'UNK',
             itemSku: item?.sku || 'UNK',
+            workName: work?.name || '',
             inQty,
             inComboQty,
             pending,
@@ -169,6 +171,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             SentDate: r.date.split('T')[0],
             RecvDate: r.lastRecvDate ? r.lastRecvDate.split('T')[0] : '---',
             ChallanNo: r.challanNo,
+            WorkDone: r.workName,
             SKU: r.itemSku,
             QtySent: r.qty,
             QtyRec: r.inQty,
@@ -179,6 +182,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             InwardEnteredBy: inwardEntered,
             InwardCheckedBy: inwardChecked,
             InwardRemarks: inwardRemarks,
+            OutwardCheckedBy: r.checkedBy || '',
             OutwardRemarks: r.remarks || ''
         };
     });
@@ -200,6 +204,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                 <div className="p-4 max-h-[60vh] overflow-y-auto">
                     <div className="mb-4 bg-blue-50 p-3 rounded-lg text-sm">
                         <p><strong>Vendor:</strong> {state.vendors.find(v => v.id === detailView.outward.vendorId)?.name}</p>
+                        <p><strong>Work Done:</strong> {state.workTypes.find(w => w.id === detailView.outward.workId)?.name}</p>
                         <p><strong>Sent Date:</strong> {new Date(detailView.outward.date).toLocaleDateString()}</p>
                         <p><strong>Total Qty:</strong> {detailView.outward.qty}</p>
                         <p><strong>Combo Qty:</strong> {detailView.outward.comboQty || 0}</p>
@@ -316,7 +321,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                     <div className="flex justify-between items-end border-t pt-2 mt-2">
                         <div>
                             <div className="text-xs font-bold text-slate-400 uppercase">{r.itemSku}</div>
-                            <div className="text-sm">
+                             <div className="text-xs font-bold text-slate-500 mt-1">{r.workName}</div>
+                            <div className="text-sm mt-1">
                                 <span className="font-bold">{r.inQty}</span> / {r.qty} Received
                                 {r.comboQty ? <span className="text-xs text-slate-400 block">Combo: {r.inComboQty}/{r.comboQty}</span> : null}
                             </div>

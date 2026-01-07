@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Vendor, Item, WorkType, AppState, OutwardEntry, InwardEntry } from '../types';
 import { Button, Input, Card } from '../components/ui';
-import { Trash2, FileDown, Upload, Settings, Database, Download } from 'lucide-react';
+import { Trash2, FileDown, Upload, Settings, Database, Download, Lock } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { exportToCSV, parseCSV, downloadTemplate } from '../services/csv';
 
@@ -12,6 +12,8 @@ interface MastersProps {
 
 const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   const [activeSection, setActiveSection] = useState<'vendors' | 'items' | 'work' | 'users' | 'data' | 'config'>('data');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [login, setLogin] = useState({ user: '', pass: '' });
   
   // Local state for forms
   const [newVendor, setNewVendor] = useState({ name: '', code: '' });
@@ -22,6 +24,14 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   // Config state
   const [apiKey, setApiKey] = useState(localStorage.getItem('GOOGLE_API_KEY') || '');
   const [clientId, setClientId] = useState(localStorage.getItem('GOOGLE_CLIENT_ID') || '');
+
+  const handleLogin = () => {
+    if (login.user === 'ADMIN' && login.pass === 'Rajkamal@1') {
+        setIsAuthenticated(true);
+    } else {
+        alert("Invalid Username or Password");
+    }
+  };
 
   const saveConfig = () => {
     localStorage.setItem('GOOGLE_API_KEY', apiKey);
@@ -65,22 +75,18 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
         let count = 0;
 
         if (type === 'vendors') {
-           // Expects Name, Code
            const valid = newData.filter((n: any) => n.Name && n.Code);
            merged = [...state.vendors, ...valid.filter((n: any) => !state.vendors.some(e => e.code === n.Code)).map((n:any) => ({ id: uuidv4(), name: n.Name, code: n.Code, synced: false }))];
            count = valid.length;
         } else if (type === 'items') {
-           // Expects SKU, Description
            const valid = newData.filter((n: any) => n.SKU);
            merged = [...state.items, ...valid.filter((n: any) => !state.items.some(e => e.sku === n.SKU)).map((n:any) => ({ id: uuidv4(), sku: n.SKU, description: n.Description || '', synced: false }))];
            count = valid.length;
         } else if (type === 'workTypes') {
-           // Expects Name
            const valid = newData.filter((n: any) => n.Name);
            merged = [...state.workTypes, ...valid.filter((n: any) => !state.workTypes.some(e => e.name === n.Name)).map((n:any) => ({ id: uuidv4(), name: n.Name, synced: false }))];
            count = valid.length;
         } else if (type === 'users') {
-           // Expects Name
            const valid = newData.filter((n: any) => n.Name);
            merged = [...state.users, ...valid.filter((n: any) => !state.users.some(e => e.name === n.Name)).map((n:any) => ({ id: uuidv4(), name: n.Name, synced: false }))];
            count = valid.length;
@@ -174,6 +180,20 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
     }
   };
 
+  if (!isAuthenticated) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[50vh] p-4">
+           <Card title="Admin Login" className="w-full max-w-sm">
+              <div className="mb-4">
+                 <Input label="Username" value={login.user} onChange={e => setLogin({...login, user: e.target.value})} placeholder="Enter Username" />
+                 <Input label="Password" type="password" value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} placeholder="Enter Password" />
+              </div>
+              <Button onClick={handleLogin}><Lock size={16} className="mr-2"/> Login</Button>
+           </Card>
+        </div>
+      );
+  }
+
   return (
     <div className="pb-24 max-w-xl mx-auto">
       <div className="flex space-x-2 mb-4 p-4 overflow-x-auto no-scrollbar">
@@ -236,14 +256,6 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
                     <input type="file" className="hidden" accept=".csv" onChange={e => handleImportEntries(e, 'inward')} />
                  </label>
              </div>
-           </Card>
-
-           <Card title="Export Data">
-             <div className="grid grid-cols-2 gap-4">
-                <Button variant="secondary" onClick={() => exportToCSV(state.outwardEntries.filter(e => !e.synced), 'outward_vouchers_unsynced')} className="text-xs"><FileDown size={14} className="mr-2"/> Outward Data (Unsynced)</Button>
-                <Button variant="secondary" onClick={() => exportToCSV(state.inwardEntries, 'inward_vouchers_all')} className="text-xs"><FileDown size={14} className="mr-2"/> Inward Data (All)</Button>
-             </div>
-             <p className="text-[10px] text-slate-400 mt-2 italic">* Outward export includes only entries not yet synced to Google Sheets. Inward includes all history.</p>
            </Card>
         </div>
       )}

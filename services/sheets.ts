@@ -125,6 +125,37 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
          const sig = getInwardSignature(e.date, vendorName, outChallan, sku, e.qty);
          return !seenInwardSignatures.has(sig);
     });
+    
+    // 2.5 SPECIAL HANDLE: Outward Status Updates (Short Close)
+    // Identify entries that exist in sheets BUT have different status locally
+    const statusUpdates = state.outwardEntries.filter(e => !e.synced && seenOutwardChallans.has(e.challanNo.trim()) && e.status === 'COMPLETED');
+    if (statusUpdates.length > 0) {
+        // We need to update the status in Google Sheets.
+        // Since we can't easily find the ROW number efficiently without iterating everything,
+        // and we have 'existingOutwardRows' (without header), row index in sheet = index + 2 (1-based + 1 header)
+        const updateRequests: any[] = [];
+        
+        statusUpdates.forEach(update => {
+            const rowIndex = existingOutwardRows.findIndex((r: any) => r[2]?.trim() === update.challanNo.trim());
+            if (rowIndex !== -1) {
+                // Row found at rowIndex (0-based in array). In Sheet it is rowIndex + 2.
+                // Status is Column O (Index 14)
+                updateRequests.push({
+                    range: `${SHEETS_CONFIG.outwardSheetName}!O${rowIndex + 2}`,
+                    values: [['COMPLETED']]
+                });
+            }
+        });
+
+        if (updateRequests.length > 0) {
+             const data = updateRequests.map(req => ({ range: req.range, values: req.values }));
+             await gapi.client.sheets.spreadsheets.values.batchUpdate({
+                 spreadsheetId: SHEETS_CONFIG.spreadsheetId,
+                 resource: { valueInputOption: "USER_ENTERED", data: data }
+             });
+        }
+    }
+
 
     // 3. UPLOAD NEW DATA
     // Masters
@@ -203,6 +234,13 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
 
     // Combine Entries (Raw Arrays)
     const allOutwardRows = [...existingOutwardRows, ...newOutwardRows];
+    // IMPORTANT: We must also reflect the status updates we just pushed in 'allOutwardRows' 
+    // because we don't redownload the sheet.
+    statusUpdates.forEach(update => {
+       const row = allOutwardRows.find(r => r[2] === update.challanNo);
+       if (row) row[14] = 'COMPLETED';
+    });
+
     const allInwardRows = [...existingInwardRows, ...newInwardRows];
 
     // Helper finders
@@ -292,6 +330,8 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       const inwardCheckedBy = Array.from(new Set(inwards.map((i: InwardEntry) => i.checkedBy).filter(Boolean))).join(', ');
       const inwardEnteredBy = Array.from(new Set(inwards.map((i: InwardEntry) => i.enteredBy).filter(Boolean))).join(', ');
       const inwardRemarks = Array.from(new Set(inwards.map((i: InwardEntry) => i.remarks).filter(Boolean))).join(', ');
+      
+      const workName = allWorks.find((w: WorkType) => w.id === out.workId)?.name || '';
 
       return [
           status, // A
@@ -299,25 +339,26 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
           out.date.split('T')[0], // C
           lastRecv ? parseDate(lastRecv).split('T')[0] : '---', // D
           out.challanNo, // E
-          allItems.find((i: Item) => i.id === out.skuId)?.sku || '', // F
-          out.qty, // G
-          inQty, // H
-          shortQty, // I
-          out.comboQty || 0, // J
-          inCombo, // K
-          shortCombo, // L
-          inwardEnteredBy, // M
-          inwardCheckedBy, // N
-          inwardRemarks, // O
-          out.checkedBy || '', // P
-          out.remarks || '' // Q
+          workName, // F (NEW WORK DONE COLUMN)
+          allItems.find((i: Item) => i.id === out.skuId)?.sku || '', // G (Shifted)
+          out.qty, // H
+          inQty, // I
+          shortQty, // J
+          out.comboQty || 0, // K
+          inCombo, // L
+          shortCombo, // M
+          inwardEnteredBy, // N
+          inwardCheckedBy, // O
+          inwardRemarks, // P
+          out.checkedBy || '', // Q
+          out.remarks || '' // R
       ];
     });
 
     // Clear and Rewrite Report
     await gapi.client.sheets.spreadsheets.values.clear({
         spreadsheetId: SHEETS_CONFIG.spreadsheetId,
-        range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:Q`
+        range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:R`
     });
 
     if (reportRows.length > 0) {
@@ -329,7 +370,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         });
     }
 
-    return { success: true, message: `Synced. Uploaded: ${newOutwardRows.length} Out, ${newInwardRows.length} In.` };
+    return { success: true, message: `Synced. Uploaded: ${newOutwardRows.length} Out, ${newInwardRows.length} In. Status Updates: ${statusUpdates.length}` };
   } catch (error: any) {
     console.error("Sync Error", error);
     if (error.status === 400 && error.result?.error?.message?.includes("origin")) {

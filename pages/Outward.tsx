@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppState, OutwardEntry, Item } from '../types';
 import { Button, Input, Select, Card } from '../components/ui';
-import { Camera, Printer, Save, Maximize2, AlertCircle } from 'lucide-react';
+import { Camera, Printer, Save, Maximize2, AlertCircle, X, QrCode } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import PrintChallan from '../components/PrintChallan';
+import QRCode from 'qrcode';
 
 interface OutwardProps {
   state: AppState;
@@ -33,6 +34,8 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
   const [lastSaved, setLastSaved] = useState<OutwardEntry | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [showLabel, setShowLabel] = useState<OutwardEntry | null>(null);
+  const [qrCodeData, setQrCodeData] = useState<string>('');
 
   useEffect(() => {
     const mat = (parseFloat(formData.totalWeight) || 0) - (parseFloat(formData.pendalWeight) || 0);
@@ -41,6 +44,17 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
       materialWeight: mat > 0 ? mat.toFixed(3) : ''
     }));
   }, [formData.totalWeight, formData.pendalWeight]);
+
+  useEffect(() => {
+    if (showLabel) {
+       const item = state.items.find(i => i.id === showLabel.skuId);
+       if (item) {
+           QRCode.toDataURL(item.sku, { width: 100, margin: 0 }, (err, url) => {
+               if (!err) setQrCodeData(url);
+           });
+       }
+    }
+  }, [showLabel, state.items]);
 
   const generateChallanNo = (vendorId: string): string => {
     if (!vendorId) return '---';
@@ -66,7 +80,6 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
       return;
     }
 
-    // DUPLICATE CHECK
     const isDuplicate = state.outwardEntries.some(e => e.challanNo === challanPreview);
     if (isDuplicate) {
         alert(`Error: Challan Number ${challanPreview} already exists! Please check your entries.`);
@@ -84,7 +97,6 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
       finalSkuId = newItem.id;
     }
 
-    // Ensure valid date
     const dateToSave = formData.date ? new Date(formData.date).toISOString() : new Date().toISOString();
 
     const newEntry: OutwardEntry = {
@@ -104,6 +116,7 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
 
     onSave(newEntry);
     setLastSaved(newEntry);
+    setShowLabel(newEntry);
     
     setFormData({
       date: today, vendorId: '', qty: '', comboQty: '', totalWeight: '', pendalWeight: '', materialWeight: '',
@@ -115,6 +128,36 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
   const handlePrint = () => {
     setIsPrinting(true);
     setTimeout(() => { window.print(); }, 100);
+  };
+
+  const handlePrintLabel = () => {
+    const win = window.open('', '', 'width=400,height=300');
+    if (win) {
+        const item = state.items.find(i => i.id === showLabel?.skuId);
+        win.document.write(`
+            <html>
+            <head><style>
+                @page { size: 50mm 25mm; margin: 0; }
+                body { margin: 0; padding: 0; width: 50mm; height: 25mm; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; overflow: hidden; }
+                .top { height: 12.5mm; width: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+                .bottom { height: 12.5mm; width: 100%; display: flex; justify-content: center; align-items: center; }
+                .heading { font-family: 'Arial Black', Arial, sans-serif; font-weight: 900; font-size: 8pt; text-transform: uppercase; }
+                .sku { font-weight: bold; font-size: 10pt; text-align: center; margin-top: 1px; }
+            </style></head>
+            <body>
+                <div class="top">
+                    <div class="heading">SKU Code</div>
+                    <div class="sku">${item?.sku || ''}</div>
+                </div>
+                <div class="bottom">
+                    <img src="${qrCodeData}" style="height: 10mm; width: 10mm;" />
+                </div>
+                <script>window.print(); window.close();</script>
+            </body>
+            </html>
+        `);
+        win.document.close();
+    }
   };
 
   if (isPrinting && lastSaved) return <PrintChallan entry={lastSaved} state={state} onClose={() => setIsPrinting(false)} />;
@@ -129,10 +172,34 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
         </div>
       )}
 
-      {lastSaved && (
+      {showLabel && (
+         <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-sm text-center">
+                <h3 className="text-lg font-bold mb-4">Generate SKU Label</h3>
+                <div className="border border-slate-300 w-[50mm] h-[25mm] mx-auto bg-white mb-6 relative shadow-md flex flex-col">
+                   <div className="h-[12.5mm] flex flex-col justify-center items-center">
+                       <div className="font-black text-[8px] uppercase font-sans">SKU Code</div>
+                       <div className="font-bold text-sm">{state.items.find(i=>i.id===showLabel.skuId)?.sku}</div>
+                   </div>
+                   <div className="h-[12.5mm] flex justify-center items-center">
+                       {qrCodeData && <img src={qrCodeData} className="h-[10mm] w-[10mm]" />}
+                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                    <Button onClick={handlePrintLabel} variant="primary"><Printer className="mr-2" size={16}/> Print Label</Button>
+                    <Button onClick={() => setShowLabel(null)} variant="secondary"><X className="mr-2" size={16}/> Close</Button>
+                </div>
+            </div>
+         </div>
+      )}
+
+      {lastSaved && !showLabel && (
         <div className="mb-4 bg-green-50 p-4 rounded-xl border border-green-200 flex justify-between items-center">
           <span className="text-green-700 font-bold">Challan {lastSaved.challanNo} Saved!</span>
-          <button onClick={handlePrint} className="flex items-center bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold"><Printer size={16} className="mr-2"/> Print</button>
+          <div>
+            <button onClick={() => setShowLabel(lastSaved)} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold mr-2"><QrCode size={16} /></button>
+            <button onClick={handlePrint} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold"><Printer size={16} /></button>
+          </div>
         </div>
       )}
 
