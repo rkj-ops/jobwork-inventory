@@ -35,6 +35,7 @@ export interface OutwardEntry {
   remarks?: string;
   enteredBy?: string;
   checkedBy?: string;
+  status?: 'OPEN' | 'COMPLETED'; // New field for manual closure
   synced?: boolean;
 }
 

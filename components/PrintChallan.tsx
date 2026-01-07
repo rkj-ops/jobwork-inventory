@@ -39,6 +39,7 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
             <th className="border border-black p-2">Qty</th>
             <th className="border border-black p-2">Combo</th>
             <th className="border border-black p-2">Total Wt</th>
+            <th className="border border-black p-2">Pendal Wt</th>
             <th className="border border-black p-2">Net Mat. Wt</th>
           </tr>
         </thead>
@@ -48,6 +49,7 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
             <td className="border border-black p-4 text-center font-bold">{entry.qty}</td>
             <td className="border border-black p-4 text-center">{entry.comboQty || '-'}</td>
             <td className="border border-black p-4 text-center">{entry.totalWeight}</td>
+            <td className="border border-black p-4 text-center">{entry.pendalWeight}</td>
             <td className="border border-black p-4 text-center font-bold">{entry.materialWeight}</td>
           </tr>
         </tbody>

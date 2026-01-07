@@ -1,35 +1,24 @@
 import { SHEETS_CONFIG, DRIVE_CONFIG, AppState } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
-export const initGapi = async (apiKey: string, clientId: string) => {
+export const initGapi = async (apiKey: string) => {
   return new Promise<void>((resolve, reject) => {
     const gapi = (window as any).gapi;
     if (!gapi) return reject("Google API Script missing");
-    gapi.load('client:auth2', async () => {
+    
+    gapi.load('client', async () => {
       try {
         await gapi.client.init({
           apiKey: apiKey,
-          clientId: clientId,
           discoveryDocs: [
             "https://sheets.googleapis.com/$discovery/rest?version=v4",
             "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
           ],
-          scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
         });
         resolve();
       } catch (e) { reject(e); }
     });
   });
-};
-
-export const signIn = async () => {
-  const gapi = (window as any).gapi;
-  return gapi.auth2.getAuthInstance().signIn();
-};
-
-export const isSignedIn = () => {
-  const gapi = (window as any).gapi;
-  return gapi.auth2?.getAuthInstance()?.isSignedIn.get();
 };
 
 const uploadImage = async (base64String: string, fileName: string): Promise<string | null> => {
@@ -41,7 +30,9 @@ const uploadImage = async (base64String: string, fileName: string): Promise<stri
     for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
     const blob = new Blob([ab], { type: 'image/jpeg' });
     const metadata = { name: fileName, parents: [DRIVE_CONFIG.folderId] };
-    const accessToken = gapi.client.getToken()?.access_token || gapi.auth.getToken().access_token;
+    
+    const accessToken = gapi.client.getToken()?.access_token;
+    if (!accessToken) throw new Error("No Access Token found. Please Sync again.");
 
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -60,7 +51,10 @@ const uploadImage = async (base64String: string, fileName: string): Promise<stri
 export const syncDataToSheets = async (state: AppState, onUpdateState: (newState: AppState) => void) => {
   const gapi = (window as any).gapi;
   
-  // 1. PUSH: Upload Unsynced Local Data
+  if (!gapi.client.getToken()) {
+    return { success: false, message: "Authorization lost. Click Sync to login again." };
+  }
+  
   const unsyncedOut = state.outwardEntries.filter(e => !e.synced);
   const unsyncedIn = state.inwardEntries.filter(e => !e.synced);
   const unsyncedVendors = state.vendors.filter(e => !e.synced);
@@ -95,14 +89,16 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         const item = state.items.find(i => i.id === e.skuId)?.sku || 'Unknown';
         const work = state.workTypes.find(w => w.id === e.workId)?.name || '';
 
+        // Added Status at index 14 (O)
         rows.push([
           e.date.split('T')[0], vendor, e.challanNo, item, e.qty, e.comboQty || '', 
           e.totalWeight, e.pendalWeight, e.materialWeight, 
-          e.checkedBy || '', e.enteredBy || '', photoUrl, work, e.remarks || ''
+          e.checkedBy || '', e.enteredBy || '', photoUrl, work, e.remarks || '',
+          e.status || 'OPEN' 
         ]);
       }
       await gapi.client.sheets.spreadsheets.values.append({
-        spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.outwardSheetName}!A:N`,
+        spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.outwardSheetName}!A:O`,
         valueInputOption: "USER_ENTERED", resource: { values: rows }
       });
     }
@@ -138,22 +134,19 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       `${SHEETS_CONFIG.vendorSheetName}!A:B`,
       `${SHEETS_CONFIG.itemSheetName}!A:B`,
       `${SHEETS_CONFIG.workSheetName}!A:A`,
-      `${SHEETS_CONFIG.outwardSheetName}!A:N`,
+      `${SHEETS_CONFIG.outwardSheetName}!A:O`, // Extended Range for Status
       `${SHEETS_CONFIG.inwardSheetName}!A:M`
     ];
     const resp = await gapi.client.sheets.spreadsheets.values.batchGet({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, ranges });
     const valueRanges = resp.result.valueRanges;
 
-    // Helper to find ID by Name
     const findId = (list: any[], name: string) => list.find(x => x.name?.trim().toLowerCase() === name?.trim().toLowerCase())?.id || '';
     const findItemId = (list: any[], sku: string) => list.find(x => x.sku?.trim().toLowerCase() === sku?.trim().toLowerCase())?.id || '';
 
-    // Parse Masters
     const newVendors = (valueRanges[0].values || []).map((r:any) => ({ id: uuidv4(), name: r[0], code: r[1], synced: true }));
     const newItems = (valueRanges[1].values || []).map((r:any) => ({ id: uuidv4(), sku: r[0], description: r[1] || '', synced: true }));
     const newWorks = (valueRanges[2].values || []).map((r:any) => ({ id: uuidv4(), name: r[0], synced: true }));
 
-    // Parse Outward
     const newOutward = (valueRanges[3].values || []).map((r:any) => ({
       id: uuidv4(),
       date: r[0] ? new Date(r[0]).toISOString() : new Date().toISOString(),
@@ -170,10 +163,10 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       photoUrl: r[11] || '',
       workId: findId(newWorks, r[12]),
       remarks: r[13] || '',
+      status: r[14] || 'OPEN', // Load Status
       synced: true
     }));
 
-    // Parse Inward
     const newInward = (valueRanges[4].values || []).map((r:any) => {
       const outChallan = newOutward.find((o: any) => o.challanNo === r[2]);
       return {
@@ -206,6 +199,9 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     return { success: true, message: "Synced & Downloaded Successfully" };
   } catch (error: any) {
     console.error("Sync Error", error);
+    if (error.status === 400 && error.result?.error?.message?.includes("origin")) {
+        return { success: false, message: "ORIGIN MISMATCH: Add this URL to Google Cloud Console > Authorized Origins" };
+    }
     return { success: false, message: error.result?.error?.message || error.message || "Sync failed" };
   }
 };

@@ -14,9 +14,8 @@ const App: React.FC = () => {
 
   useEffect(() => { saveData(state); }, [state]);
 
-  const updateVendors = (vendors: Vendor[]) => setState(prev => ({ ...prev, vendors }));
-  const updateItems = (items: Item[]) => setState(prev => ({ ...prev, items }));
-  const updateWorkTypes = (workTypes: WorkType[]) => setState(prev => ({ ...prev, workTypes }));
+  const updateState = (k: keyof AppState, v: any) => setState(prev => ({ ...prev, [k]: v }));
+  
   const addOutwardEntry = (entry: OutwardEntry) => setState(prev => ({ ...prev, outwardEntries: [...prev.outwardEntries, entry] }));
   const addInwardEntry = (entry: InwardEntry) => setState(prev => ({ ...prev, inwardEntries: [...prev.inwardEntries, entry] }));
   const handleAddItem = (item: Item) => setState(prev => ({ ...prev, items: [...prev.items, item] }));
@@ -28,17 +27,17 @@ const App: React.FC = () => {
 
   const renderContent = () => {
     switch (currentTab) {
-      case 'masters': return <Masters vendors={state.vendors} setVendors={updateVendors} items={state.items} setItems={updateItems} workTypes={state.workTypes} setWorkTypes={updateWorkTypes} />;
+      case 'masters': return <Masters state={state} updateState={updateState} />;
       case 'outward': return <Outward state={state} onSave={addOutwardEntry} onAddItem={handleAddItem} />;
-      case 'inward': return <Inward state={state} onSave={addInwardEntry} />;
-      case 'recon': return <Report state={state} markSynced={handleSyncComplete} />;
+      case 'inward': return <Inward state={state} onSave={addInwardEntry} updateState={updateState} />;
+      case 'recon': return <Report state={state} markSynced={handleSyncComplete} updateState={updateState} />;
       default: return <div>Page not found</div>;
     }
   };
 
   const getTitle = () => {
     switch(currentTab) {
-      case 'masters': return 'Manage Data';
+      case 'masters': return 'Setup & Data';
       case 'outward': return 'Outward Entry';
       case 'inward': return 'Inward Entry';
       case 'recon': return 'Reconciliation Report';

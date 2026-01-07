@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppState, OutwardEntry, Item } from '../types';
 import { Button, Input, Select, Card } from '../components/ui';
-import { Camera, Plus, AlertCircle, Clock, Printer, Save } from 'lucide-react';
+import { Camera, Plus, AlertCircle, Clock, Printer, Save, Maximize2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import PrintChallan from '../components/PrintChallan';
 
@@ -32,6 +32,7 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
   const [skuInput, setSkuInput] = useState('');
   const [lastSaved, setLastSaved] = useState<OutwardEntry | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   useEffect(() => {
     const mat = (parseFloat(formData.totalWeight) || 0) - (parseFloat(formData.pendalWeight) || 0);
@@ -87,6 +88,7 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
       pendalWeight: parseFloat(formData.pendalWeight) || 0,
       materialWeight: parseFloat(formData.materialWeight) || 0,
       date: new Date(formData.date).toISOString(),
+      status: 'OPEN',
       synced: false
     };
 
@@ -111,6 +113,12 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
 
   return (
     <div className="p-4 pb-24 max-w-xl mx-auto">
+      {previewImage && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}>
+           <img src={previewImage} className="max-w-full max-h-full rounded" />
+        </div>
+      )}
+
       {lastSaved && (
         <div className="mb-4 bg-green-50 p-4 rounded-xl border border-green-200 flex justify-between items-center">
           <span className="text-green-700 font-bold">Challan {lastSaved.challanNo} Saved!</span>
@@ -161,11 +169,18 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
 
         <div className="mb-4">
           <label className="block text-sm font-medium text-slate-700 mb-1">Photo</label>
-          <label className="flex items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50">
-             <Camera className="mr-2 text-slate-400"/> {formData.photo ? 'Retake' : 'Capture'}
-             <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
-          </label>
-          {formData.photo && <img src={formData.photo} className="mt-2 h-24 rounded-lg border object-cover" />}
+          <div className="flex gap-4 items-center">
+              <label className="flex-1 flex items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50">
+                 <Camera className="mr-2 text-slate-400"/> {formData.photo ? 'Retake' : 'Capture'}
+                 <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
+              </label>
+              {formData.photo && (
+                  <div className="relative group cursor-pointer" onClick={() => setPreviewImage(formData.photo)}>
+                    <img src={formData.photo} className="h-16 w-16 rounded-lg border object-cover" />
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 flex items-center justify-center rounded-lg"><Maximize2 className="text-white opacity-0 group-hover:opacity-100" size={16}/></div>
+                  </div>
+              )}
+          </div>
         </div>
 
         <Input label="Remarks" value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} />

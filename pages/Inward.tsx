@@ -1,15 +1,16 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AppState, InwardEntry } from '../types';
 import { Button, Input, Select, Card } from '../components/ui';
-import { Download, AlertCircle, Camera } from 'lucide-react';
+import { Download, AlertCircle, Camera, Maximize2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 interface InwardProps {
   state: AppState;
   onSave: (entry: InwardEntry) => void;
+  updateState?: (k: keyof AppState, v: any) => void; // Added for marking complete
 }
 
-const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
+const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
   const today = new Date().toISOString().split('T')[0];
   const [selectedVendorId, setSelectedVendorId] = useState('');
   const [selectedOutwardId, setSelectedOutwardId] = useState('');
@@ -17,15 +18,17 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
 
   const [formData, setFormData] = useState({
     date: today, qty: '', comboQty: '', totalWeight: '', pendalWeight: '', materialWeight: '', remarks: '',
-    enteredBy: '', checkedBy: '', photo: ''
+    enteredBy: '', checkedBy: '', photo: '', markComplete: false
   });
+
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedOutward) {
       setFormData({
         date: today, qty: selectedOutward.qty.toString(), comboQty: selectedOutward.comboQty?.toString() || '',
         totalWeight: selectedOutward.totalWeight.toString(), pendalWeight: selectedOutward.pendalWeight.toString(),
-        materialWeight: selectedOutward.materialWeight.toString(), remarks: '', enteredBy: '', checkedBy: '', photo: ''
+        materialWeight: selectedOutward.materialWeight.toString(), remarks: '', enteredBy: '', checkedBy: '', photo: '', markComplete: false
       });
     }
   }, [selectedOutward]);
@@ -37,6 +40,8 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
 
   const pendingOutwards = state.outwardEntries.filter(e => {
     if (e.vendorId !== selectedVendorId) return false;
+    // Don't show completed
+    if (e.status === 'COMPLETED') return false; 
     const returnedQty = state.inwardEntries.filter(i => i.outwardChallanId === e.id).reduce((sum, i) => sum + i.qty, 0);
     return returnedQty < e.qty;
   });
@@ -52,6 +57,7 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
   const handleSubmit = () => {
     if (!selectedOutwardId || !formData.qty) return alert("Select Challan & Qty");
     
+    // Save Inward Entry
     onSave({
       id: uuidv4(),
       outwardChallanId: selectedOutwardId,
@@ -67,12 +73,26 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
       synced: false
     });
 
-    setFormData({ date: today, qty: '', comboQty: '', totalWeight: '', pendalWeight: '', materialWeight: '', remarks: '', enteredBy: '', checkedBy: '', photo: '' });
+    // Handle Manual Completion (Short Close)
+    if (formData.markComplete && updateState) {
+        const updatedOutwards = state.outwardEntries.map(e => 
+            e.id === selectedOutwardId ? { ...e, status: 'COMPLETED' as const, synced: false } : e
+        );
+        updateState('outwardEntries', updatedOutwards);
+    }
+
+    setFormData({ date: today, qty: '', comboQty: '', totalWeight: '', pendalWeight: '', materialWeight: '', remarks: '', enteredBy: '', checkedBy: '', photo: '', markComplete: false });
     setSelectedOutwardId('');
   };
 
   return (
     <div className="p-4 pb-24 max-w-xl mx-auto">
+      {previewImage && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}>
+           <img src={previewImage} className="max-w-full max-h-full rounded" />
+        </div>
+      )}
+
       <Card title="Source">
         <Select label="Vendor" value={selectedVendorId} onChange={e => { setSelectedVendorId(e.target.value); setSelectedOutwardId(''); }}>
           <option value="">Select Vendor</option>
@@ -112,15 +132,30 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
               <Input label="Entered By" value={formData.enteredBy} onChange={e => setFormData({...formData, enteredBy: e.target.value})} />
               <Input label="Checked By" value={formData.checkedBy} onChange={e => setFormData({...formData, checkedBy: e.target.value})} />
            </div>
+           
            <div className="mb-4">
               <label className="block text-sm font-medium text-slate-700 mb-1">Inward Photo</label>
-              <label className="flex items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50">
-                 <Camera className="mr-2 text-slate-400"/> {formData.photo ? 'Retake' : 'Capture'}
-                 <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
-              </label>
-              {formData.photo && <img src={formData.photo} className="mt-2 h-24 rounded-lg border object-cover" />}
+              <div className="flex gap-4 items-center">
+                  <label className="flex-1 flex items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50">
+                     <Camera className="mr-2 text-slate-400"/> {formData.photo ? 'Retake' : 'Capture'}
+                     <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
+                  </label>
+                  {formData.photo && (
+                      <div className="relative group cursor-pointer" onClick={() => setPreviewImage(formData.photo)}>
+                        <img src={formData.photo} className="h-16 w-16 rounded-lg border object-cover" />
+                        <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 flex items-center justify-center rounded-lg"><Maximize2 className="text-white opacity-0 group-hover:opacity-100" size={16}/></div>
+                      </div>
+                  )}
+              </div>
             </div>
+
            <Input label="Remarks" value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} />
+           
+           <label className="flex items-center p-3 mb-4 bg-orange-50 border border-orange-200 rounded-xl cursor-pointer">
+              <input type="checkbox" className="w-5 h-5 text-orange-600 rounded" checked={formData.markComplete} onChange={e => setFormData({...formData, markComplete: e.target.checked})} />
+              <span className="ml-3 font-bold text-sm text-orange-800">Mark Job Complete (Short Close)</span>
+           </label>
+
            <Button onClick={handleSubmit}><Download size={20} className="mr-2" /> Save Inward</Button>
         </Card>
       )}
