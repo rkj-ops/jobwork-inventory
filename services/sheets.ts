@@ -1,4 +1,4 @@
-import { SHEETS_CONFIG, DRIVE_CONFIG, AppState } from '../types';
+import { SHEETS_CONFIG, DRIVE_CONFIG, AppState, Vendor, Item, WorkType, OutwardEntry, InwardEntry } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
 export const initGapi = async (apiKey: string) => {
@@ -165,14 +165,14 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const resp = await gapi.client.sheets.spreadsheets.values.batchGet({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, ranges });
     const valueRanges = resp.result.valueRanges;
 
-    const findId = (list: any[], name: string) => list.find(x => x.name?.trim().toLowerCase() === name?.trim().toLowerCase())?.id || '';
-    const findItemId = (list: any[], sku: string) => list.find(x => x.sku?.trim().toLowerCase() === sku?.trim().toLowerCase())?.id || '';
+    const findId = (list: any[], name: string) => list.find((x: any) => x.name?.trim().toLowerCase() === name?.trim().toLowerCase())?.id || '';
+    const findItemId = (list: any[], sku: string) => list.find((x: any) => x.sku?.trim().toLowerCase() === sku?.trim().toLowerCase())?.id || '';
 
-    const newVendors = (valueRanges[0].values || []).map((r:any) => ({ id: uuidv4(), name: r[0], code: r[1], synced: true }));
-    const newItems = (valueRanges[1].values || []).map((r:any) => ({ id: uuidv4(), sku: r[0], description: r[1] || '', synced: true }));
-    const newWorks = (valueRanges[2].values || []).map((r:any) => ({ id: uuidv4(), name: r[0], synced: true }));
+    const newVendors: Vendor[] = (valueRanges[0].values || []).map((r:any) => ({ id: uuidv4(), name: r[0], code: r[1], synced: true }));
+    const newItems: Item[] = (valueRanges[1].values || []).map((r:any) => ({ id: uuidv4(), sku: r[0], description: r[1] || '', synced: true }));
+    const newWorks: WorkType[] = (valueRanges[2].values || []).map((r:any) => ({ id: uuidv4(), name: r[0], synced: true }));
 
-    const newOutward = (valueRanges[3].values || []).map((r:any) => ({
+    const newOutward: OutwardEntry[] = (valueRanges[3].values || []).map((r:any) => ({
       id: uuidv4(),
       date: parseDate(r[0]),
       vendorId: findId(newVendors, r[1]),
@@ -188,11 +188,11 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       photoUrl: r[11] || '',
       workId: findId(newWorks, r[12]),
       remarks: r[13] || '',
-      status: r[14] || 'OPEN', // Load Status
+      status: (r[14] as 'OPEN' | 'COMPLETED') || 'OPEN', // Load Status
       synced: true
     }));
 
-    const newInward = (valueRanges[4].values || []).map((r:any) => {
+    const newInward: InwardEntry[] = (valueRanges[4].values || []).map((r:any) => {
       const outChallan = newOutward.find((o: any) => o.challanNo === r[2]);
       return {
         id: uuidv4(),
@@ -223,12 +223,12 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
 
     // --- RECONCILIATION REPORT SYNC ---
     try {
-      const reportRows = newOutward.map(out => {
-        const inwards = newInward.filter(i => i.outwardChallanId === out.id);
-        const inQty = inwards.reduce((sum, i) => sum + i.qty, 0);
-        const inCombo = inwards.reduce((sum, i) => sum + (i.comboQty || 0), 0);
+      const reportRows = newOutward.map((out: OutwardEntry) => {
+        const inwards = newInward.filter((i: InwardEntry) => i.outwardChallanId === out.id);
+        const inQty = inwards.reduce((sum: number, i: InwardEntry) => sum + i.qty, 0);
+        const inCombo = inwards.reduce((sum: number, i: InwardEntry) => sum + (i.comboQty || 0), 0);
         // Get latest inward date
-        const lastRecv = inwards.length ? inwards.map(i => i.date).sort().pop() : null;
+        const lastRecv = inwards.length ? inwards.map((i: InwardEntry) => i.date).sort().pop() : null;
         
         const shortQty = out.qty - inQty;
         const shortCombo = (out.comboQty || 0) - inCombo;
@@ -240,16 +240,16 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
             status = 'Completed';
         }
 
-        const inwardCheckedBy = Array.from(new Set(inwards.map(i => i.checkedBy).filter(Boolean))).join(', ');
-        const inwardRemarks = Array.from(new Set(inwards.map(i => i.remarks).filter(Boolean))).join(', ');
+        const inwardCheckedBy = Array.from(new Set(inwards.map((i: InwardEntry) => i.checkedBy).filter(Boolean))).join(', ');
+        const inwardRemarks = Array.from(new Set(inwards.map((i: InwardEntry) => i.remarks).filter(Boolean))).join(', ');
 
         return [
             status, // A
-            newVendors.find(v => v.id === out.vendorId)?.name || '', // B
+            newVendors.find((v: Vendor) => v.id === out.vendorId)?.name || '', // B
             out.date.split('T')[0], // C
             lastRecv ? lastRecv.split('T')[0] : '---', // D
             out.challanNo, // E
-            newItems.find(i => i.id === out.skuId)?.sku || '', // F
+            newItems.find((i: Item) => i.id === out.skuId)?.sku || '', // F
             out.qty, // G
             inQty, // H
             shortQty, // I
