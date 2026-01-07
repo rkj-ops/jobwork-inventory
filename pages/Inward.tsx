@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AppState, InwardEntry } from '../types';
 import { Button, Input, Select, Card } from '../components/ui';
-import { Download, AlertCircle, Camera, Maximize2 } from 'lucide-react';
+import { Download, Camera, Maximize2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 interface InwardProps {
@@ -57,6 +57,9 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
   const handleSubmit = () => {
     if (!selectedOutwardId || !formData.qty) return alert("Select Challan & Qty");
     
+    // Ensure valid date
+    const dateToSave = formData.date ? new Date(formData.date).toISOString() : new Date().toISOString();
+
     // Save Inward Entry
     onSave({
       id: uuidv4(),
@@ -69,7 +72,7 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
       totalWeight: parseFloat(formData.totalWeight) || 0,
       pendalWeight: parseFloat(formData.pendalWeight) || 0,
       materialWeight: parseFloat(formData.materialWeight) || 0,
-      date: new Date(formData.date).toISOString(),
+      date: dateToSave,
       synced: false
     });
 

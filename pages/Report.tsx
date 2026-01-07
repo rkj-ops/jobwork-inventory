@@ -1,14 +1,15 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { AppState, OutwardEntry, InwardEntry } from '../types';
-import { Card, Button, Select, Input } from '../components/ui';
+import { Card, Button } from '../components/ui';
 import { syncDataToSheets, initGapi } from '../services/sheets';
-import { RefreshCw, ChevronDown, ChevronUp, Settings, Trash2, FileDown, Printer, AlertTriangle, Search, Filter, Eye, CheckCircle } from 'lucide-react';
+import { exportToCSV } from '../services/csv';
+import { ChevronDown, ChevronUp, Trash2, Printer, CheckCircle, Search } from 'lucide-react';
 import PrintChallan from '../components/PrintChallan';
 
 interface ReportProps {
   state: AppState;
   markSynced: (newState: AppState) => void;
-  updateState?: (k: keyof AppState, v: any) => void; // Added to handle manual status update
+  updateState?: (k: keyof AppState, v: any) => void;
 }
 
 const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
@@ -90,6 +91,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
     let rows = state.outwardEntries.map(o => {
         const inwards = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
         const inQty = inwards.reduce((s, i) => s + i.qty, 0);
+        const inComboQty = inwards.reduce((s, i) => s + (i.comboQty || 0), 0);
+        
         const lastRecvDate = inwards.length > 0 
             ? inwards.map(i => i.date).sort().pop() 
             : null;
@@ -97,6 +100,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
         const item = state.items.find(i => i.id === o.skuId);
         
         let pending = o.qty - inQty;
+        const comboPending = (o.comboQty || 0) - inComboQty;
+        
         // If manually completed, pending is effectively 0 for display logic purposes
         if(o.status === 'COMPLETED') pending = 0; 
 
@@ -106,7 +111,9 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             vendorCode: vendor?.code || 'UNK',
             itemSku: item?.sku || 'UNK',
             inQty,
+            inComboQty,
             pending,
+            comboPending,
             lastRecvDate,
             inwards
         };
@@ -144,6 +151,36 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
     return rows;
   }, [state, searchTerm, dateFrom, dateTo, sortBy, sortOrder, hideCompleted]);
 
+  const handleDownloadCSV = () => {
+    const dataToExport = reportData.map(r => {
+        let status = 'Pending';
+        if (r.status === 'COMPLETED') {
+            status = r.pending > 0 ? 'Short Qty Completed' : 'Completed';
+        } else if (r.pending <= 0) {
+            status = 'Completed';
+        }
+        const inwardRemarks = Array.from(new Set(r.inwards.map((i: InwardEntry) => i.remarks).filter(Boolean))).join('; ');
+
+        return {
+            Status: status,
+            Vendor: r.vendorName,
+            SentDate: r.date.split('T')[0],
+            RecvDate: r.lastRecvDate ? r.lastRecvDate.split('T')[0] : '---',
+            ChallanNo: r.challanNo,
+            SKU: r.itemSku,
+            QtySent: r.qty,
+            QtyRec: r.inQty,
+            ShortQty: r.qty - r.inQty,
+            ComboSent: r.comboQty || 0,
+            ComboRec: r.inComboQty,
+            ComboShort: (r.comboQty || 0) - r.inComboQty,
+            InwardRemarks: inwardRemarks,
+            OutwardRemarks: r.remarks || ''
+        };
+    });
+    exportToCSV(dataToExport, `Reconciliation_Report_${new Date().toISOString().split('T')[0]}`);
+  };
+
   if (printEntry) return <PrintChallan entry={printEntry} state={state} onClose={() => setPrintEntry(null)} />;
 
   return (
@@ -161,6 +198,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                         <p><strong>Vendor:</strong> {state.vendors.find(v => v.id === detailView.outward.vendorId)?.name}</p>
                         <p><strong>Sent Date:</strong> {new Date(detailView.outward.date).toLocaleDateString()}</p>
                         <p><strong>Total Qty:</strong> {detailView.outward.qty}</p>
+                        <p><strong>Combo Qty:</strong> {detailView.outward.comboQty || 0}</p>
                         <p><strong>Status:</strong> {detailView.outward.status || 'OPEN'}</p>
                     </div>
                     <h4 className="font-bold text-xs uppercase text-slate-500 mb-2">Inward History</h4>
@@ -170,8 +208,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                                 <tr>
                                     <th className="p-2 text-left">Date</th>
                                     <th className="p-2 text-right">Qty</th>
-                                    <th className="p-2 text-left">Entered By</th>
-                                    <th className="p-2 text-left">Checked By</th>
+                                    <th className="p-2 text-right">Combo</th>
                                     <th className="p-2 text-left">Remarks</th>
                                 </tr>
                             </thead>
@@ -180,8 +217,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                                     <tr key={i.id} className="border-b">
                                         <td className="p-2">{new Date(i.date).toLocaleDateString()}</td>
                                         <td className="p-2 text-right">{i.qty}</td>
-                                        <td className="p-2 text-xs text-slate-600">{i.enteredBy || '-'}</td>
-                                        <td className="p-2 text-xs text-slate-600">{i.checkedBy || '-'}</td>
+                                        <td className="p-2 text-right">{i.comboQty || 0}</td>
                                         <td className="p-2 text-slate-500 text-xs">{i.remarks}</td>
                                     </tr>
                                 ))}
@@ -241,6 +277,9 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                     <span>Hide Completed</span>
                 </label>
             </div>
+            <div className="md:col-span-2">
+                <Button variant="secondary" onClick={handleDownloadCSV} className="text-sm py-2">Download Report CSV</Button>
+            </div>
          </div>
       </Card>
 
@@ -269,6 +308,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                             <div className="text-xs font-bold text-slate-400 uppercase">{r.itemSku}</div>
                             <div className="text-sm">
                                 <span className="font-bold">{r.inQty}</span> / {r.qty} Received
+                                {r.comboQty ? <span className="text-xs text-slate-400 block">Combo: {r.inComboQty}/{r.comboQty}</span> : null}
                             </div>
                         </div>
                         {!isCompleted ? (

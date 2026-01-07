@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppState, OutwardEntry, Item } from '../types';
 import { Button, Input, Select, Card } from '../components/ui';
-import { Camera, Plus, AlertCircle, Clock, Printer, Save, Maximize2 } from 'lucide-react';
+import { Camera, Printer, Save, Maximize2, AlertCircle } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import PrintChallan from '../components/PrintChallan';
 
@@ -77,6 +77,9 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
       finalSkuId = newItem.id;
     }
 
+    // Ensure valid date
+    const dateToSave = formData.date ? new Date(formData.date).toISOString() : new Date().toISOString();
+
     const newEntry: OutwardEntry = {
       id: uuidv4(),
       ...formData,
@@ -87,7 +90,7 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
       totalWeight: parseFloat(formData.totalWeight) || 0,
       pendalWeight: parseFloat(formData.pendalWeight) || 0,
       materialWeight: parseFloat(formData.materialWeight) || 0,
-      date: new Date(formData.date).toISOString(),
+      date: dateToSave,
       status: 'OPEN',
       synced: false
     };

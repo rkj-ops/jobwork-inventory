@@ -48,29 +48,40 @@ const uploadImage = async (base64String: string, fileName: string): Promise<stri
   } catch (error) { console.error("Drive Upload Error", error); return null; }
 };
 
-// Helper to safely parse dates from sheets (handles various formats)
+// Robust Date Parser with Safety Checks
 const parseDate = (value: any): string => {
-  if (!value) return new Date().toISOString();
-  
-  let d = new Date(value);
-  
-  // If standard parsing fails, check for DD/MM/YYYY or DD-MM-YYYY (Common in sheets)
-  if (isNaN(d.getTime())) {
-    const match = String(value).trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
-    if (match) {
-        // match[1] = DD, match[2] = MM, match[3] = YYYY
-        // Construct YYYY-MM-DD which is ISO compliant
-        d = new Date(`${match[3]}-${match[2]}-${match[1]}`);
-    }
-  }
+  try {
+    if (!value) return new Date().toISOString();
 
-  // If still invalid, fallback to now to prevent app crash
-  if (isNaN(d.getTime())) {
-    console.warn("Sync: Invalid Date found:", value, "- using current date");
+    let d = new Date(value);
+
+    // Handle DD/MM/YYYY or DD-MM-YYYY formats commonly found in sheets
+    if (isNaN(d.getTime())) {
+      const match = String(value).trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+      if (match) {
+        // match[3] = YYYY, match[2] = MM, match[1] = DD
+        d = new Date(`${match[3]}-${match[2]}-${match[1]}`);
+      }
+    }
+
+    // Check validity
+    if (isNaN(d.getTime())) {
+        console.warn("Sync: Invalid Date detected:", value);
+        return new Date().toISOString();
+    }
+    
+    // Check reasonable year range to prevent ISOString RangeError (e.g. year 200000)
+    const year = d.getFullYear();
+    if (year < 1900 || year > 2100) {
+        console.warn("Sync: Date out of range:", value);
+        return new Date().toISOString();
+    }
+
+    return d.toISOString();
+  } catch (e) {
+    console.error("Sync: Date parsing error", e);
     return new Date().toISOString();
   }
-  
-  return d.toISOString();
 };
 
 export const syncDataToSheets = async (state: AppState, onUpdateState: (newState: AppState) => void) => {
@@ -247,7 +258,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
             status, // A
             newVendors.find((v: Vendor) => v.id === out.vendorId)?.name || '', // B
             out.date.split('T')[0], // C
-            lastRecv ? lastRecv.split('T')[0] : '---', // D
+            lastRecv ? parseDate(lastRecv).split('T')[0] : '---', // D (Safe Parse)
             out.challanNo, // E
             newItems.find((i: Item) => i.id === out.skuId)?.sku || '', // F
             out.qty, // G
