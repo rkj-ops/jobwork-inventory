@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppState, OutwardEntry, Item } from '../types';
 import { Button, Input, Select, Card } from '../components/ui';
-import { Camera, Printer, Save, Maximize2, AlertCircle, X, QrCode } from 'lucide-react';
+import { Camera, Printer, Save, Maximize2, AlertCircle, X, ScanBarcode } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import PrintChallan from '../components/PrintChallan';
-import QRCode from 'qrcode';
+import JsBarcode from 'jsbarcode';
 
 interface OutwardProps {
   state: AppState;
@@ -35,7 +35,7 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
   const [isPrinting, setIsPrinting] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [showLabel, setShowLabel] = useState<OutwardEntry | null>(null);
-  const [qrCodeData, setQrCodeData] = useState<string>('');
+  const [barcodeData, setBarcodeData] = useState<string>('');
 
   useEffect(() => {
     const mat = (parseFloat(formData.totalWeight) || 0) - (parseFloat(formData.pendalWeight) || 0);
@@ -48,10 +48,20 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
   useEffect(() => {
     if (showLabel) {
        const item = state.items.find(i => i.id === showLabel.skuId);
-       if (item) {
-           QRCode.toDataURL(item.sku, { width: 100, margin: 0 }, (err, url) => {
-               if (!err) setQrCodeData(url);
-           });
+       if (item && item.sku) {
+           try {
+             const canvas = document.createElement('canvas');
+             JsBarcode(canvas, item.sku, {
+                format: "CODE128",
+                displayValue: false,
+                margin: 0,
+                height: 50,
+                width: 2
+             });
+             setBarcodeData(canvas.toDataURL("image/png"));
+           } catch (e) {
+             console.error("Barcode generation failed", e);
+           }
        }
     }
   }, [showLabel, state.items]);
@@ -138,11 +148,12 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
             <html>
             <head><style>
                 @page { size: 50mm 25mm; margin: 0; }
-                body { margin: 0; padding: 0; width: 50mm; height: 25mm; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; overflow: hidden; }
-                .top { height: 12.5mm; width: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-                .bottom { height: 12.5mm; width: 100%; display: flex; justify-content: center; align-items: center; }
-                .heading { font-family: 'Arial Black', Arial, sans-serif; font-weight: 900; font-size: 8pt; text-transform: uppercase; }
-                .sku { font-weight: bold; font-size: 10pt; text-align: center; margin-top: 1px; }
+                body { margin: 0; padding: 0; width: 50mm; height: 25mm; display: flex; flex-direction: column; align-items: center; justify-content: space-between; font-family: sans-serif; overflow: hidden; }
+                .top { height: 10mm; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-top: 1mm;}
+                .bottom { height: 14mm; width: 100%; display: flex; justify-content: center; align-items: flex-start; }
+                .heading { font-family: 'Arial Black', Arial, sans-serif; font-weight: 900; font-size: 8pt; text-transform: uppercase; line-height: 1; }
+                .sku { font-weight: bold; font-size: 11pt; text-align: center; margin-top: 1px; }
+                .barcode-img { height: 12mm; max-width: 48mm; }
             </style></head>
             <body>
                 <div class="top">
@@ -150,7 +161,7 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
                     <div class="sku">${item?.sku || ''}</div>
                 </div>
                 <div class="bottom">
-                    <img src="${qrCodeData}" style="height: 10mm; width: 10mm;" />
+                    <img src="${barcodeData}" class="barcode-img" />
                 </div>
                 <script>window.print(); window.close();</script>
             </body>
@@ -176,13 +187,13 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
          <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl p-6 w-full max-w-sm text-center">
                 <h3 className="text-lg font-bold mb-4">Generate SKU Label</h3>
-                <div className="border border-slate-300 w-[50mm] h-[25mm] mx-auto bg-white mb-6 relative shadow-md flex flex-col">
-                   <div className="h-[12.5mm] flex flex-col justify-center items-center">
-                       <div className="font-black text-[8px] uppercase font-sans">SKU Code</div>
-                       <div className="font-bold text-sm">{state.items.find(i=>i.id===showLabel.skuId)?.sku}</div>
+                <div className="border border-slate-300 w-[50mm] h-[25mm] mx-auto bg-white mb-6 relative shadow-md flex flex-col items-center">
+                   <div className="h-[10mm] w-full flex flex-col justify-end items-center pt-1">
+                       <div className="font-black text-[10px] uppercase font-sans leading-none">SKU Code</div>
+                       <div className="font-bold text-lg leading-none">{state.items.find(i=>i.id===showLabel.skuId)?.sku}</div>
                    </div>
-                   <div className="h-[12.5mm] flex justify-center items-center">
-                       {qrCodeData && <img src={qrCodeData} className="h-[10mm] w-[10mm]" />}
+                   <div className="h-[15mm] w-full flex justify-center items-start pt-1">
+                       {barcodeData && <img src={barcodeData} className="h-[12mm] max-w-[48mm]" />}
                    </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -197,7 +208,7 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
         <div className="mb-4 bg-green-50 p-4 rounded-xl border border-green-200 flex justify-between items-center">
           <span className="text-green-700 font-bold">Challan {lastSaved.challanNo} Saved!</span>
           <div>
-            <button onClick={() => setShowLabel(lastSaved)} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold mr-2"><QrCode size={16} /></button>
+            <button onClick={() => setShowLabel(lastSaved)} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold mr-2"><ScanBarcode size={16} /></button>
             <button onClick={handlePrint} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold"><Printer size={16} /></button>
           </div>
         </div>
