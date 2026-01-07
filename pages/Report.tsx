@@ -23,6 +23,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
   const [dateTo, setDateTo] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'qty' | 'overdue'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [hideCompleted, setHideCompleted] = useState(false);
 
   const tokenClient = useRef<any>(null);
 
@@ -122,6 +123,10 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
     if (dateFrom) rows = rows.filter(r => r.date >= dateFrom);
     if (dateTo) rows = rows.filter(r => r.date <= dateTo);
 
+    if (hideCompleted) {
+        rows = rows.filter(r => r.pending > 0 && r.status !== 'COMPLETED');
+    }
+
     // Sorting
     rows.sort((a, b) => {
         let diff = 0;
@@ -137,7 +142,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
     });
 
     return rows;
-  }, [state, searchTerm, dateFrom, dateTo, sortBy, sortOrder]);
+  }, [state, searchTerm, dateFrom, dateTo, sortBy, sortOrder, hideCompleted]);
 
   if (printEntry) return <PrintChallan entry={printEntry} state={state} onClose={() => setPrintEntry(null)} />;
 
@@ -165,6 +170,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                                 <tr>
                                     <th className="p-2 text-left">Date</th>
                                     <th className="p-2 text-right">Qty</th>
+                                    <th className="p-2 text-left">Entered By</th>
+                                    <th className="p-2 text-left">Checked By</th>
                                     <th className="p-2 text-left">Remarks</th>
                                 </tr>
                             </thead>
@@ -173,6 +180,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                                     <tr key={i.id} className="border-b">
                                         <td className="p-2">{new Date(i.date).toLocaleDateString()}</td>
                                         <td className="p-2 text-right">{i.qty}</td>
+                                        <td className="p-2 text-xs text-slate-600">{i.enteredBy || '-'}</td>
+                                        <td className="p-2 text-xs text-slate-600">{i.checkedBy || '-'}</td>
                                         <td className="p-2 text-slate-500 text-xs">{i.remarks}</td>
                                     </tr>
                                 ))}
@@ -216,15 +225,21 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                 <span className="self-center">-</span>
                 <input type="date" className="p-2 border rounded-lg flex-1" value={dateTo} onChange={e => setDateTo(e.target.value)} />
             </div>
-            <div className="flex gap-2">
-                <select className="p-2 border rounded-lg flex-1" value={sortBy} onChange={(e:any) => setSortBy(e.target.value)}>
-                    <option value="date">Sort by Date</option>
-                    <option value="qty">Sort by Qty</option>
-                    <option value="overdue">Sort by Overdue</option>
-                </select>
-                <button className="p-2 border rounded-lg bg-slate-50" onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}>
-                    {sortOrder === 'asc' ? <ChevronUp /> : <ChevronDown />}
-                </button>
+            <div className="flex flex-col md:flex-row gap-2">
+                <div className="flex gap-2 flex-1">
+                    <select className="p-2 border rounded-lg flex-1" value={sortBy} onChange={(e:any) => setSortBy(e.target.value)}>
+                        <option value="date">Sort by Date</option>
+                        <option value="qty">Sort by Qty</option>
+                        <option value="overdue">Sort by Overdue</option>
+                    </select>
+                    <button className="p-2 border rounded-lg bg-slate-50" onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}>
+                        {sortOrder === 'asc' ? <ChevronUp /> : <ChevronDown />}
+                    </button>
+                </div>
+                <label className="flex items-center space-x-2 text-sm text-slate-600 font-bold cursor-pointer p-2 border rounded-lg bg-slate-50 whitespace-nowrap justify-center md:justify-start hover:bg-slate-100 transition-colors">
+                    <input type="checkbox" checked={hideCompleted} onChange={e => setHideCompleted(e.target.checked)} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" />
+                    <span>Hide Completed</span>
+                </label>
             </div>
          </div>
       </Card>

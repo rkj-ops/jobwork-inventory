@@ -48,6 +48,31 @@ const uploadImage = async (base64String: string, fileName: string): Promise<stri
   } catch (error) { console.error("Drive Upload Error", error); return null; }
 };
 
+// Helper to safely parse dates from sheets (handles various formats)
+const parseDate = (value: any): string => {
+  if (!value) return new Date().toISOString();
+  
+  let d = new Date(value);
+  
+  // If standard parsing fails, check for DD/MM/YYYY or DD-MM-YYYY (Common in sheets)
+  if (isNaN(d.getTime())) {
+    const match = String(value).trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+    if (match) {
+        // match[1] = DD, match[2] = MM, match[3] = YYYY
+        // Construct YYYY-MM-DD which is ISO compliant
+        d = new Date(`${match[3]}-${match[2]}-${match[1]}`);
+    }
+  }
+
+  // If still invalid, fallback to now to prevent app crash
+  if (isNaN(d.getTime())) {
+    console.warn("Sync: Invalid Date found:", value, "- using current date");
+    return new Date().toISOString();
+  }
+  
+  return d.toISOString();
+};
+
 export const syncDataToSheets = async (state: AppState, onUpdateState: (newState: AppState) => void) => {
   const gapi = (window as any).gapi;
   
@@ -149,7 +174,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
 
     const newOutward = (valueRanges[3].values || []).map((r:any) => ({
       id: uuidv4(),
-      date: r[0] ? new Date(r[0]).toISOString() : new Date().toISOString(),
+      date: parseDate(r[0]),
       vendorId: findId(newVendors, r[1]),
       challanNo: r[2],
       skuId: findItemId(newItems, r[3]),
@@ -171,7 +196,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       const outChallan = newOutward.find((o: any) => o.challanNo === r[2]);
       return {
         id: uuidv4(),
-        date: r[0] ? new Date(r[0]).toISOString() : new Date().toISOString(),
+        date: parseDate(r[0]),
         vendorId: findId(newVendors, r[1]),
         outwardChallanId: outChallan?.id || '',
         skuId: findItemId(newItems, r[3]),
@@ -196,7 +221,70 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       inwardEntries: newInward
     });
 
-    return { success: true, message: "Synced & Downloaded Successfully" };
+    // --- RECONCILIATION REPORT SYNC ---
+    try {
+      const reportRows = newOutward.map(out => {
+        const inwards = newInward.filter(i => i.outwardChallanId === out.id);
+        const inQty = inwards.reduce((sum, i) => sum + i.qty, 0);
+        const inCombo = inwards.reduce((sum, i) => sum + (i.comboQty || 0), 0);
+        // Get latest inward date
+        const lastRecv = inwards.length ? inwards.map(i => i.date).sort().pop() : null;
+        
+        const shortQty = out.qty - inQty;
+        const shortCombo = (out.comboQty || 0) - inCombo;
+
+        let status = 'Pending';
+        if (out.status === 'COMPLETED') {
+            status = shortQty > 0 ? 'Short Qty Completed' : 'Completed';
+        } else if (shortQty <= 0) {
+            status = 'Completed';
+        }
+
+        const inwardCheckedBy = Array.from(new Set(inwards.map(i => i.checkedBy).filter(Boolean))).join(', ');
+        const inwardRemarks = Array.from(new Set(inwards.map(i => i.remarks).filter(Boolean))).join(', ');
+
+        return [
+            status, // A
+            newVendors.find(v => v.id === out.vendorId)?.name || '', // B
+            out.date.split('T')[0], // C
+            lastRecv ? lastRecv.split('T')[0] : '---', // D
+            out.challanNo, // E
+            newItems.find(i => i.id === out.skuId)?.sku || '', // F
+            out.qty, // G
+            inQty, // H
+            shortQty, // I
+            out.comboQty || 0, // J
+            inCombo, // K
+            shortCombo, // L
+            inwardCheckedBy, // M
+            inwardRemarks, // N
+            out.checkedBy || '', // O
+            out.remarks || '' // P
+        ];
+      });
+
+      // Clear existing report data (A2:P)
+      await gapi.client.sheets.spreadsheets.values.clear({
+          spreadsheetId: SHEETS_CONFIG.spreadsheetId,
+          range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:P`
+      });
+
+      // Write new report data
+      if (reportRows.length > 0) {
+          await gapi.client.sheets.spreadsheets.values.update({
+              spreadsheetId: SHEETS_CONFIG.spreadsheetId,
+              range: `${SHEETS_CONFIG.reconciliationSheetName}!A2`,
+              valueInputOption: "USER_ENTERED",
+              resource: { values: reportRows }
+          });
+      }
+    } catch (err) {
+      console.error("Reconciliation Sync Failed (Optional)", err);
+      // Don't block main sync success if just the report fails (e.g. sheet doesn't exist)
+    }
+    // ----------------------------------
+
+    return { success: true, message: "Synced, Downloaded & Report Updated" };
   } catch (error: any) {
     console.error("Sync Error", error);
     if (error.status === 400 && error.result?.error?.message?.includes("origin")) {

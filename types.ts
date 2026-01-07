@@ -72,7 +72,8 @@ export const SHEETS_CONFIG = {
   inwardSheetName: "Inward",
   vendorSheetName: "VENDOR MASTER",
   itemSheetName: "ITEM MASTER",
-  workSheetName: "WORK MASTER"
+  workSheetName: "WORK MASTER",
+  reconciliationSheetName: "Reconciliation"
 };
 
 export const DRIVE_CONFIG = {
