@@ -23,9 +23,11 @@ export const exportToCSV = (data: any[], filename: string) => {
 export const parseCSV = (content: string): any[] => {
   const lines = content.trim().split('\n');
   if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+  // Remove BOM if present and trim headers
+  const headers = lines[0].replace(/^\uFEFF/, '').split(',').map(h => h.trim().replace(/"/g, ''));
   
   return lines.slice(1).map(line => {
+    if (!line.trim()) return null; // Skip empty lines
     // Handle quotes in CSV
     const values: string[] = [];
     let inQuote = false;
@@ -47,5 +49,43 @@ export const parseCSV = (content: string): any[] => {
       else obj[h] = val;
     });
     return obj;
-  });
+  }).filter(Boolean);
+};
+
+export const downloadTemplate = (type: 'vendors' | 'items' | 'workTypes' | 'outward' | 'inward') => {
+  let headers = '';
+  let row = '';
+  
+  switch(type) {
+    case 'vendors':
+       headers = 'Name,Code';
+       row = 'Acme Corp,ACME001';
+       break;
+    case 'items':
+       headers = 'SKU,Description';
+       row = 'ITEM-001,Golden Ring';
+       break;
+    case 'workTypes':
+       headers = 'Name';
+       row = 'Polishing';
+       break;
+    case 'outward':
+       headers = 'Date,VendorCode,ChallanNo,SKU,Qty,ComboQty,TotalWt,PendalWt,WorkName,Remarks';
+       row = '2023-12-31,ACME001,CH-001,ITEM-001,100,0,500.50,10.50,Polishing,Sample Entry';
+       break;
+    case 'inward':
+       headers = 'Date,VendorCode,OutwardChallanNo,SKU,Qty,ComboQty,TotalWt,PendalWt,Remarks';
+       row = '2024-01-05,ACME001,CH-001,ITEM-001,100,0,490.00,10.50,Received OK';
+       break;
+  }
+  
+  const csvContent = `${headers}\n${row}`;
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `${type}_template.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 };

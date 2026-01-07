@@ -160,6 +160,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             status = 'Completed';
         }
         const inwardRemarks = Array.from(new Set(r.inwards.map((i: InwardEntry) => i.remarks).filter(Boolean))).join('; ');
+        const inwardEntered = Array.from(new Set(r.inwards.map((i: InwardEntry) => i.enteredBy).filter(Boolean))).join('; ');
+        const inwardChecked = Array.from(new Set(r.inwards.map((i: InwardEntry) => i.checkedBy).filter(Boolean))).join('; ');
 
         return {
             Status: status,
@@ -174,6 +176,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             ComboSent: r.comboQty || 0,
             ComboRec: r.inComboQty,
             ComboShort: (r.comboQty || 0) - r.inComboQty,
+            InwardEnteredBy: inwardEntered,
+            InwardCheckedBy: inwardChecked,
             InwardRemarks: inwardRemarks,
             OutwardRemarks: r.remarks || ''
         };
@@ -203,26 +207,32 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                     </div>
                     <h4 className="font-bold text-xs uppercase text-slate-500 mb-2">Inward History</h4>
                     {detailView.inwards.length === 0 ? <p className="text-slate-400 italic text-sm">No items received yet.</p> : (
-                        <table className="w-full text-sm">
-                            <thead className="bg-slate-100">
-                                <tr>
-                                    <th className="p-2 text-left">Date</th>
-                                    <th className="p-2 text-right">Qty</th>
-                                    <th className="p-2 text-right">Combo</th>
-                                    <th className="p-2 text-left">Remarks</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {detailView.inwards.map(i => (
-                                    <tr key={i.id} className="border-b">
-                                        <td className="p-2">{new Date(i.date).toLocaleDateString()}</td>
-                                        <td className="p-2 text-right">{i.qty}</td>
-                                        <td className="p-2 text-right">{i.comboQty || 0}</td>
-                                        <td className="p-2 text-slate-500 text-xs">{i.remarks}</td>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm min-w-[400px]">
+                                <thead className="bg-slate-100">
+                                    <tr>
+                                        <th className="p-2 text-left">Date</th>
+                                        <th className="p-2 text-right">Qty</th>
+                                        <th className="p-2 text-right">Combo</th>
+                                        <th className="p-2 text-left">Entered</th>
+                                        <th className="p-2 text-left">Checked</th>
+                                        <th className="p-2 text-left">Remarks</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {detailView.inwards.map(i => (
+                                        <tr key={i.id} className="border-b">
+                                            <td className="p-2">{new Date(i.date).toLocaleDateString()}</td>
+                                            <td className="p-2 text-right">{i.qty}</td>
+                                            <td className="p-2 text-right">{i.comboQty || 0}</td>
+                                            <td className="p-2 text-xs text-slate-600">{i.enteredBy || '-'}</td>
+                                            <td className="p-2 text-xs text-slate-600">{i.checkedBy || '-'}</td>
+                                            <td className="p-2 text-slate-500 text-xs">{i.remarks}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     )}
                 </div>
                 <div className="p-4 border-t bg-slate-50 flex justify-end">

@@ -66,6 +66,13 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
       return;
     }
 
+    // DUPLICATE CHECK
+    const isDuplicate = state.outwardEntries.some(e => e.challanNo === challanPreview);
+    if (isDuplicate) {
+        alert(`Error: Challan Number ${challanPreview} already exists! Please check your entries.`);
+        return;
+    }
+
     let finalSkuId = '';
     const existingItem = state.items.find(i => i.sku.toLowerCase() === skuInput.toLowerCase());
 

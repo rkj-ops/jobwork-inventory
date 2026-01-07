@@ -23,12 +23,20 @@ export const initGapi = async (apiKey: string) => {
 
 const uploadImage = async (base64String: string, fileName: string): Promise<string | null> => {
   try {
+    if (!base64String || !base64String.includes(',')) return null;
+
     const gapi = (window as any).gapi;
+    
+    // Detect Mime Type
+    const mimeMatch = base64String.match(/data:(.*);base64/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+
     const byteString = atob(base64String.split(',')[1]);
     const ab = new ArrayBuffer(byteString.length);
     const ia = new Uint8Array(ab);
     for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
-    const blob = new Blob([ab], { type: 'image/jpeg' });
+    
+    const blob = new Blob([ab], { type: mimeType });
     const metadata = { name: fileName, parents: [DRIVE_CONFIG.folderId] };
     
     const accessToken = gapi.client.getToken()?.access_token;
@@ -43,9 +51,15 @@ const uploadImage = async (base64String: string, fileName: string): Promise<stri
       headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
       body: form
     });
+    
+    if (!response.ok) throw new Error(`Upload Failed: ${response.statusText}`);
+    
     const data = await response.json();
     return data.webViewLink || null;
-  } catch (error) { console.error("Drive Upload Error", error); return null; }
+  } catch (error) { 
+    console.error("Drive Upload Error", error); 
+    return null; 
+  }
 };
 
 // Robust Date Parser with Safety Checks
@@ -98,7 +112,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
   const unsyncedWorks = state.workTypes.filter(e => !e.synced);
 
   try {
-    // Sync Masters
+    // 1. PUSH: Sync Masters
     if (unsyncedVendors.length) await gapi.client.sheets.spreadsheets.values.append({
       spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.vendorSheetName}!A:B`,
       valueInputOption: "USER_ENTERED", resource: { values: unsyncedVendors.map(v => [v.name, v.code]) }
@@ -125,7 +139,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         const item = state.items.find(i => i.id === e.skuId)?.sku || 'Unknown';
         const work = state.workTypes.find(w => w.id === e.workId)?.name || '';
 
-        // Added Status at index 14 (O)
         rows.push([
           e.date.split('T')[0], vendor, e.challanNo, item, e.qty, e.comboQty || '', 
           e.totalWeight, e.pendalWeight, e.materialWeight, 
@@ -165,12 +178,12 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       });
     }
 
-    // 2. PULL: Download ALL data
+    // 2. PULL: Download ALL data (Use slice(1) to ignore Headers)
     const ranges = [
       `${SHEETS_CONFIG.vendorSheetName}!A:B`,
       `${SHEETS_CONFIG.itemSheetName}!A:B`,
       `${SHEETS_CONFIG.workSheetName}!A:A`,
-      `${SHEETS_CONFIG.outwardSheetName}!A:O`, // Extended Range for Status
+      `${SHEETS_CONFIG.outwardSheetName}!A:O`,
       `${SHEETS_CONFIG.inwardSheetName}!A:M`
     ];
     const resp = await gapi.client.sheets.spreadsheets.values.batchGet({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, ranges });
@@ -179,31 +192,43 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const findId = (list: any[], name: string) => list.find((x: any) => x.name?.trim().toLowerCase() === name?.trim().toLowerCase())?.id || '';
     const findItemId = (list: any[], sku: string) => list.find((x: any) => x.sku?.trim().toLowerCase() === sku?.trim().toLowerCase())?.id || '';
 
-    const newVendors: Vendor[] = (valueRanges[0].values || []).map((r:any) => ({ id: uuidv4(), name: r[0], code: r[1], synced: true }));
-    const newItems: Item[] = (valueRanges[1].values || []).map((r:any) => ({ id: uuidv4(), sku: r[0], description: r[1] || '', synced: true }));
-    const newWorks: WorkType[] = (valueRanges[2].values || []).map((r:any) => ({ id: uuidv4(), name: r[0], synced: true }));
+    // NOTE: Added .slice(1) to all mappings to ignore the first row (Header)
+    const newVendors: Vendor[] = (valueRanges[0].values || []).slice(1).map((r:any) => ({ id: uuidv4(), name: r[0], code: r[1], synced: true }));
+    const newItems: Item[] = (valueRanges[1].values || []).slice(1).map((r:any) => ({ id: uuidv4(), sku: r[0], description: r[1] || '', synced: true }));
+    const newWorks: WorkType[] = (valueRanges[2].values || []).slice(1).map((r:any) => ({ id: uuidv4(), name: r[0], synced: true }));
 
-    const newOutward: OutwardEntry[] = (valueRanges[3].values || []).map((r:any) => ({
-      id: uuidv4(),
-      date: parseDate(r[0]),
-      vendorId: findId(newVendors, r[1]),
-      challanNo: r[2],
-      skuId: findItemId(newItems, r[3]),
-      qty: parseFloat(r[4] || 0),
-      comboQty: parseFloat(r[5] || 0),
-      totalWeight: parseFloat(r[6] || 0),
-      pendalWeight: parseFloat(r[7] || 0),
-      materialWeight: parseFloat(r[8] || 0),
-      checkedBy: r[9] || '',
-      enteredBy: r[10] || '',
-      photoUrl: r[11] || '',
-      workId: findId(newWorks, r[12]),
-      remarks: r[13] || '',
-      status: (r[14] as 'OPEN' | 'COMPLETED') || 'OPEN', // Load Status
-      synced: true
-    }));
+    // UNIQUE CHALLAN LOGIC FOR OUTWARD
+    const seenChallans = new Set<string>();
+    const newOutward: OutwardEntry[] = [];
+    
+    (valueRanges[3].values || []).slice(1).forEach((r:any) => {
+       const challanNo = r[2];
+       if (challanNo && !seenChallans.has(challanNo)) {
+           seenChallans.add(challanNo);
+           newOutward.push({
+              id: uuidv4(),
+              date: parseDate(r[0]),
+              vendorId: findId(newVendors, r[1]),
+              challanNo: challanNo,
+              skuId: findItemId(newItems, r[3]),
+              qty: parseFloat(r[4] || 0),
+              comboQty: parseFloat(r[5] || 0),
+              totalWeight: parseFloat(r[6] || 0),
+              pendalWeight: parseFloat(r[7] || 0),
+              materialWeight: parseFloat(r[8] || 0),
+              checkedBy: r[9] || '',
+              enteredBy: r[10] || '',
+              photoUrl: r[11] || '',
+              workId: findId(newWorks, r[12]),
+              remarks: r[13] || '',
+              status: (r[14] as 'OPEN' | 'COMPLETED') || 'OPEN',
+              synced: true
+           });
+       }
+    });
 
-    const newInward: InwardEntry[] = (valueRanges[4].values || []).map((r:any) => {
+    // Inward does NOT need unique constraint (multiple inwards per outward allowed)
+    const newInward: InwardEntry[] = (valueRanges[4].values || []).slice(1).map((r:any) => {
       const outChallan = newOutward.find((o: any) => o.challanNo === r[2]);
       return {
         id: uuidv4(),
@@ -291,7 +316,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       }
     } catch (err) {
       console.error("Reconciliation Sync Failed (Optional)", err);
-      // Don't block main sync success if just the report fails (e.g. sheet doesn't exist)
     }
     // ----------------------------------
 

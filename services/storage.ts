@@ -25,5 +25,13 @@ export const loadData = (): AppState => {
 };
 
 export const saveData = (data: AppState) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error("Storage Error: Quota Exceeded or Invalid Data", e);
+    // Alert the user only if it's likely a quota error (usually DOMException code 22)
+    if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.code === 22)) {
+        alert("⚠️ Local Storage Full! Your images are too large to save locally.\n\nPlease click 'Sync' to upload data to Google Sheets and clear local space.");
+    }
+  }
 };
