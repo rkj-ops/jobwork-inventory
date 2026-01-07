@@ -94,11 +94,11 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const resp = await gapi.client.sheets.spreadsheets.values.batchGet({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, ranges });
     const valueRanges = resp.result.valueRanges;
 
-    // Parse Existing Data
-    const existingVendors = (valueRanges[0].values || []).slice(1).map((r:any) => ({ id: uuidv4(), name: r[0], code: r[1], synced: true }));
-    const existingItems = (valueRanges[1].values || []).slice(1).map((r:any) => ({ id: uuidv4(), sku: r[0], description: r[1] || '', synced: true }));
-    const existingWorks = (valueRanges[2].values || []).slice(1).map((r:any) => ({ id: uuidv4(), name: r[0], synced: true }));
-    const existingUsers = (valueRanges[5].values || []).slice(1).map((r:any) => ({ id: uuidv4(), name: r[0], synced: true }));
+    // Parse Existing Data with Explicit Types
+    const existingVendors: Vendor[] = (valueRanges[0].values || []).slice(1).map((r:any) => ({ id: uuidv4(), name: r[0], code: r[1], synced: true }));
+    const existingItems: Item[] = (valueRanges[1].values || []).slice(1).map((r:any) => ({ id: uuidv4(), sku: r[0], description: r[1] || '', synced: true }));
+    const existingWorks: WorkType[] = (valueRanges[2].values || []).slice(1).map((r:any) => ({ id: uuidv4(), name: r[0], synced: true }));
+    const existingUsers: User[] = (valueRanges[5].values || []).slice(1).map((r:any) => ({ id: uuidv4(), name: r[0], synced: true }));
     
     const existingOutwardRows = (valueRanges[3].values || []).slice(1);
     const existingInwardRows = (valueRanges[4].values || []).slice(1);
@@ -110,11 +110,11 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     ));
 
     // 2. IDENTIFY TRULY NEW ITEMS (Filter out ones that exist in sheet)
-    // Masters
-    const unsyncedVendors = state.vendors.filter(e => !e.synced && !existingVendors.some(ev => ev.code === e.code));
-    const unsyncedItems = state.items.filter(e => !e.synced && !existingItems.some(ei => ei.sku === e.sku));
-    const unsyncedWorks = state.workTypes.filter(e => !e.synced && !existingWorks.some(ew => ew.name === e.name));
-    const unsyncedUsers = state.users.filter(e => !e.synced && !existingUsers.some(eu => eu.name === e.name));
+    // Masters - Explicitly type callbacks to avoid implicit 'any' errors
+    const unsyncedVendors = state.vendors.filter(e => !e.synced && !existingVendors.some((ev: Vendor) => ev.code === e.code));
+    const unsyncedItems = state.items.filter(e => !e.synced && !existingItems.some((ei: Item) => ei.sku === e.sku));
+    const unsyncedWorks = state.workTypes.filter(e => !e.synced && !existingWorks.some((ew: WorkType) => ew.name === e.name));
+    const unsyncedUsers = state.users.filter(e => !e.synced && !existingUsers.some((eu: User) => eu.name === e.name));
     
     // Entries
     const validOutwardToUpload = state.outwardEntries.filter(e => !e.synced && !seenOutwardChallans.has(e.challanNo.trim()));
