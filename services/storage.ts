@@ -6,6 +6,7 @@ const initialData: AppState = {
   vendors: [],
   items: [],
   workTypes: [],
+  users: [],
   outwardEntries: [],
   inwardEntries: [],
 };

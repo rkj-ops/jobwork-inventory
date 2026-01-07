@@ -132,8 +132,14 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
              <Input label="Mat. Wt" type="number" className="bg-slate-50" readOnly value={formData.materialWeight} />
            </div>
            <div className="grid grid-cols-2 gap-4">
-              <Input label="Entered By" value={formData.enteredBy} onChange={e => setFormData({...formData, enteredBy: e.target.value})} />
-              <Input label="Checked By" value={formData.checkedBy} onChange={e => setFormData({...formData, checkedBy: e.target.value})} />
+              <Select label="Entered By" value={formData.enteredBy} onChange={e => setFormData({...formData, enteredBy: e.target.value})}>
+                 <option value="">Select User</option>
+                 {state.users.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+              </Select>
+              <Select label="Checked By" value={formData.checkedBy} onChange={e => setFormData({...formData, checkedBy: e.target.value})}>
+                 <option value="">Select User</option>
+                 {state.users.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+              </Select>
            </div>
            
            <div className="mb-4">

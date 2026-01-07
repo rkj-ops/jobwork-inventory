@@ -52,7 +52,7 @@ export const parseCSV = (content: string): any[] => {
   }).filter(Boolean);
 };
 
-export const downloadTemplate = (type: 'vendors' | 'items' | 'workTypes' | 'outward' | 'inward') => {
+export const downloadTemplate = (type: 'vendors' | 'items' | 'workTypes' | 'users' | 'outward' | 'inward') => {
   let headers = '';
   let row = '';
   
@@ -68,6 +68,10 @@ export const downloadTemplate = (type: 'vendors' | 'items' | 'workTypes' | 'outw
     case 'workTypes':
        headers = 'Name';
        row = 'Polishing';
+       break;
+    case 'users':
+       headers = 'Name';
+       row = 'John Doe';
        break;
     case 'outward':
        headers = 'Date,VendorCode,ChallanNo,SKU,Qty,ComboQty,TotalWt,PendalWt,WorkName,Remarks';

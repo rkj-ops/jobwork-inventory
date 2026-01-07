@@ -11,12 +11,13 @@ interface MastersProps {
 }
 
 const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
-  const [activeSection, setActiveSection] = useState<'vendors' | 'items' | 'work' | 'data' | 'config'>('data');
+  const [activeSection, setActiveSection] = useState<'vendors' | 'items' | 'work' | 'users' | 'data' | 'config'>('data');
   
   // Local state for forms
   const [newVendor, setNewVendor] = useState({ name: '', code: '' });
   const [newItem, setNewItem] = useState({ sku: '', description: '' });
   const [newWork, setNewWork] = useState({ name: '' });
+  const [newUser, setNewUser] = useState({ name: '' });
   
   // Config state
   const [apiKey, setApiKey] = useState(localStorage.getItem('GOOGLE_API_KEY') || '');
@@ -46,7 +47,13 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
     setNewWork({ name: '' });
   };
 
-  const handleImportMasters = (e: React.ChangeEvent<HTMLInputElement>, type: 'vendors' | 'items' | 'workTypes') => {
+  const addUser = () => {
+    if (!newUser.name) return;
+    updateState('users', [...state.users, { id: uuidv4(), ...newUser, synced: false }]);
+    setNewUser({ name: '' });
+  };
+
+  const handleImportMasters = (e: React.ChangeEvent<HTMLInputElement>, type: 'vendors' | 'items' | 'workTypes' | 'users') => {
     if(e.target.files && e.target.files[0]) {
       const reader = new FileReader();
       reader.onload = (evt) => {
@@ -67,10 +74,15 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
            const valid = newData.filter((n: any) => n.SKU);
            merged = [...state.items, ...valid.filter((n: any) => !state.items.some(e => e.sku === n.SKU)).map((n:any) => ({ id: uuidv4(), sku: n.SKU, description: n.Description || '', synced: false }))];
            count = valid.length;
-        } else {
+        } else if (type === 'workTypes') {
            // Expects Name
            const valid = newData.filter((n: any) => n.Name);
            merged = [...state.workTypes, ...valid.filter((n: any) => !state.workTypes.some(e => e.name === n.Name)).map((n:any) => ({ id: uuidv4(), name: n.Name, synced: false }))];
+           count = valid.length;
+        } else if (type === 'users') {
+           // Expects Name
+           const valid = newData.filter((n: any) => n.Name);
+           merged = [...state.users, ...valid.filter((n: any) => !state.users.some(e => e.name === n.Name)).map((n:any) => ({ id: uuidv4(), name: n.Name, synced: false }))];
            count = valid.length;
         }
         
@@ -94,14 +106,11 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
         if (type === 'outward') {
             const newEntries: OutwardEntry[] = [];
             data.forEach((row: any) => {
-                // Check if ChallanNo already exists
                 const existing = state.outwardEntries.find(o => o.challanNo === row.ChallanNo);
                 if (existing) {
                     duplicateCount++;
                     return;
                 }
-
-                // Map Code/SKU to ID
                 const vendor = state.vendors.find(v => v.code === row.VendorCode);
                 const item = state.items.find(i => i.sku === row.SKU);
                 const work = state.workTypes.find(w => w.name === row.WorkName);
@@ -141,7 +150,7 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
                         id: uuidv4(),
                         date: row.Date ? new Date(row.Date).toISOString() : new Date().toISOString(),
                         vendorId: vendor.id,
-                        outwardChallanId: outChallan?.id || '', // Link if found, else empty
+                        outwardChallanId: outChallan?.id || '', 
                         skuId: item.id,
                         qty: Number(row.Qty) || 0,
                         comboQty: Number(row.ComboQty) || 0,
@@ -168,7 +177,7 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   return (
     <div className="pb-24 max-w-xl mx-auto">
       <div className="flex space-x-2 mb-4 p-4 overflow-x-auto no-scrollbar">
-        {['data', 'vendors', 'items', 'work', 'config'].map((sec) => (
+        {['data', 'vendors', 'items', 'work', 'users', 'config'].map((sec) => (
           <button
             key={sec}
             onClick={() => setActiveSection(sec as any)}
@@ -197,7 +206,7 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
            <Card title="Import/Export Masters">
              <p className="text-xs text-slate-400 mb-4">Upload CSV files to bulk add masters. Download templates to see the required format.</p>
              
-             {['vendors', 'items', 'workTypes'].map((t) => (
+             {['vendors', 'items', 'workTypes', 'users'].map((t) => (
                 <div key={t} className="flex items-center gap-2 mb-3 pb-3 border-b last:border-0 last:pb-0">
                     <div className="w-24 text-sm font-bold capitalize text-slate-600">{t.replace('Types','')}</div>
                     <button onClick={() => downloadTemplate(t as any)} className="p-2 text-blue-600 bg-blue-50 rounded-lg text-xs font-bold hover:bg-blue-100"><Download size={14} className="inline mr-1"/> Template</button>
@@ -211,7 +220,6 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
 
            <Card title="Import Entries">
              <p className="text-xs text-slate-400 mb-4">Bulk import historical data. Ensure Master Codes/SKUs match exactly.</p>
-             
              <div className="flex items-center gap-2 mb-3 pb-3 border-b">
                  <div className="w-24 text-sm font-bold text-slate-600">Outward</div>
                  <button onClick={() => downloadTemplate('outward')} className="p-2 text-blue-600 bg-blue-50 rounded-lg text-xs font-bold hover:bg-blue-100"><Download size={14} className="inline mr-1"/> Template</button>
@@ -220,7 +228,6 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
                     <input type="file" className="hidden" accept=".csv" onChange={e => handleImportEntries(e, 'outward')} />
                  </label>
              </div>
-
              <div className="flex items-center gap-2">
                  <div className="w-24 text-sm font-bold text-slate-600">Inward</div>
                  <button onClick={() => downloadTemplate('inward')} className="p-2 text-blue-600 bg-blue-50 rounded-lg text-xs font-bold hover:bg-blue-100"><Download size={14} className="inline mr-1"/> Template</button>
@@ -300,6 +307,25 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
               <div key={w.id} className="bg-white p-3 rounded-lg border border-slate-200 flex justify-between items-center shadow-sm">
                 <div className="font-bold flex items-center">{w.name} {!w.synced && <span className="ml-2 w-2 h-2 rounded-full bg-orange-400" />}</div>
                 <button onClick={() => updateState('workTypes', state.workTypes.filter(x => x.id !== w.id))} className="text-red-500 p-2"><Trash2 size={18} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeSection === 'users' && (
+        <div className="px-4">
+           <Card title="Manage Users">
+            <div className="mb-4">
+               <Input label="User Name" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="e.g. John Doe" />
+            </div>
+            <Button onClick={addUser} disabled={!newUser.name}>Add User</Button>
+          </Card>
+          <div className="space-y-2">
+            {state.users.map(u => (
+              <div key={u.id} className="bg-white p-3 rounded-lg border border-slate-200 flex justify-between items-center shadow-sm">
+                <div className="font-bold flex items-center">{u.name} {!u.synced && <span className="ml-2 w-2 h-2 rounded-full bg-orange-400" />}</div>
+                <button onClick={() => updateState('users', state.users.filter(x => x.id !== u.id))} className="text-red-500 p-2"><Trash2 size={18} /></button>
               </div>
             ))}
           </div>

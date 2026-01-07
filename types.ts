@@ -18,6 +18,12 @@ export interface WorkType {
   synced?: boolean;
 }
 
+export interface User {
+  id: string;
+  name: string;
+  synced?: boolean;
+}
+
 export interface OutwardEntry {
   id: string;
   date: string;
@@ -62,6 +68,7 @@ export interface AppState {
   vendors: Vendor[];
   items: Item[];
   workTypes: WorkType[];
+  users: User[];
   outwardEntries: OutwardEntry[];
   inwardEntries: InwardEntry[];
 }
@@ -73,6 +80,7 @@ export const SHEETS_CONFIG = {
   vendorSheetName: "VENDOR MASTER",
   itemSheetName: "ITEM MASTER",
   workSheetName: "WORK MASTER",
+  userSheetName: "USER MASTER",
   reconciliationSheetName: "Reconciliation"
 };
 
