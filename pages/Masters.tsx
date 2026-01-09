@@ -32,8 +32,8 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   };
 
   const handleDownloadReconReport = () => {
-    // Format requested (From Column A):
-    // status | vendor | sent date | recieved date | challan no. | work done | sku | qty sent | qty rec | short qty | combo qty sent | combo qty recieved | combo qty short | inward checked by | inward remarks | outward checked by | outward remarks
+    // Exact column sequence requested starting from Column A:
+    // status(complete/pending/short qty completed) | vendor | sent date | recieved date | challan no. | work done | sku | qty sent | qty rec | short qty | combo qty sent | combo qty recieved | combo qty short | inward checked by | inward remarks | outward checked by | outward remarks
     
     const reportData = state.outwardEntries.map(o => {
         const ins = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
@@ -44,19 +44,22 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
         const item = state.items.find(i => i.id === o.skuId);
         const work = state.workTypes.find(w => w.id === o.workId);
         
-        const isClosed = o.status === 'COMPLETED';
-        const isDone = inQty >= o.qty && o.qty > 0;
+        const isMarkedClosed = o.status === 'COMPLETED';
+        const isActuallyDone = inQty >= o.qty && o.qty > 0;
         
         let statusStr = 'pending';
-        if (isClosed) statusStr = o.qty > inQty ? 'short qty completed' : 'complete';
-        else if (isDone) statusStr = 'complete';
+        if (isMarkedClosed) {
+            statusStr = o.qty > inQty ? 'short qty completed' : 'complete';
+        } else if (isActuallyDone) {
+            statusStr = 'complete';
+        }
 
-        // Aggregate inward values separated by semicolons
+        // Aggregate multiple inward data points
         const recvDatesStr = Array.from(new Set(ins.map(i => i.date.split('T')[0]))).sort().join('; ');
         const inwardCheckedBy = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
         const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
 
-        // Using direct lowercase keys as requested for Column A mapping
+        // Return object with the exact keys provided in the prompt for Column A mapping
         return {
             'status(complete/pending/short qty completed)': statusStr,
             'vendor': vendor?.name || 'Unknown',
@@ -67,10 +70,10 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
             'sku': item?.sku || 'Unknown',
             'qty sent': o.qty,
             'qty rec': inQty,
-            'short qty': isClosed ? Math.max(0, o.qty - inQty) : (isDone ? 0 : 0),
+            'short qty': isMarkedClosed ? Math.max(0, o.qty - inQty) : 0,
             'combo qty sent': o.comboQty ?? 0,
             'combo qty recieved': inCombo,
-            'combo qty short': isClosed ? Math.max(0, (o.comboQty ?? 0) - inCombo) : 0,
+            'combo qty short': isMarkedClosed ? Math.max(0, (o.comboQty ?? 0) - inCombo) : 0,
             'inward checked by': inwardCheckedBy || '---',
             'inward remarks': inwardRemarks || '---',
             'outward checked by': o.checkedBy || '---',
@@ -145,13 +148,13 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
 
   if (!isAuthenticated) {
       return (
-        <div className="flex flex-col items-center justify-center min-h-[50vh] p-4">
-           <Card title="Admin Login" className="w-full max-w-sm">
+        <div className="flex flex-col items-center justify-center min-h-[60vh] p-4">
+           <Card title="Admin Authorization" className="w-full max-w-sm">
               <div className="mb-4">
-                 <Input label="Username" value={login.user} onChange={e => setLogin({...login, user: e.target.value})} placeholder="Enter Username" />
-                 <Input label="Password" type="password" value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} placeholder="Enter Password" />
+                 <Input label="Admin User" value={login.user} onChange={e => setLogin({...login, user: e.target.value.toUpperCase()})} placeholder="Enter Username" />
+                 <Input label="Access Key" type="password" value={login.pass} onChange={e => setLogin({...login, pass: e.target.value})} placeholder="Enter Password" />
               </div>
-              <Button onClick={handleLogin}><Lock size={16} className="mr-2"/> Login</Button>
+              <Button onClick={handleLogin}><Lock size={16} className="mr-2"/> Authenticate</Button>
            </Card>
         </div>
       );
@@ -164,30 +167,35 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
           <button
             key={sec}
             onClick={() => setActiveSection(sec as any)}
-            className={`px-4 py-2 rounded-full whitespace-nowrap capitalize text-sm font-bold shadow-sm transition-colors ${activeSection === sec ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+            className={`px-5 py-2.5 rounded-full whitespace-nowrap capitalize text-xs font-black tracking-tight shadow-sm transition-all ${activeSection === sec ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}
           >
-            {sec === 'data' ? 'Data Tools' : sec}
+            {sec === 'data' ? 'Reconciliation' : sec}
           </button>
         ))}
       </div>
 
       {activeSection === 'data' && (
         <div className="px-4 space-y-4">
-           <Card title="Download Reports">
-              <Button onClick={handleDownloadReconReport} variant="primary" className="mb-2">
-                 <BarChart3 size={18} className="mr-2"/> Download Reconciliation Report
+           <Card title="Report Generation">
+              <Button onClick={handleDownloadReconReport} variant="primary" className="mb-3 py-4">
+                 <BarChart3 size={20} className="mr-3"/> Export Reconciliation Report (CSV)
               </Button>
-              <p className="text-[10px] text-slate-400 text-center italic">Columns: Status, Vendor, Dates, Challan, Work, SKU, Qtys, Checked By, Remarks.</p>
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Column Order (A-Q)</h4>
+                <p className="text-[10px] text-slate-500 font-mono leading-relaxed">
+                  Status, Vendor, Sent Date, Received Date, Challan No, Work Done, SKU, Qty Sent, Qty Rec, Short Qty, Combo Sent, Combo Rec, Combo Short, Inward Checked, Inward Remarks, Outward Checked, Outward Remarks.
+                </p>
+              </div>
            </Card>
 
-           <Card title="Import Masters">
-             <p className="text-xs text-slate-400 mb-4">Upload CSV files to bulk add masters.</p>
+           <Card title="Bulk Master Import">
+             <p className="text-[11px] text-slate-400 mb-5">Select a category to import via CSV template.</p>
              {['vendors', 'items', 'workTypes', 'users'].map((t) => (
-                <div key={t} className="flex items-center gap-2 mb-3 pb-3 border-b last:border-0 last:pb-0">
-                    <div className="w-24 text-sm font-bold capitalize text-slate-600">{t.replace('Types','')}</div>
-                    <button onClick={() => downloadTemplate(t as any)} className="p-2 text-blue-600 bg-blue-50 rounded-lg text-xs font-bold hover:bg-blue-100"><Download size={14} className="inline mr-1"/> Template</button>
-                    <label className="flex-1 text-center p-2 bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 cursor-pointer hover:bg-slate-200">
-                        <Upload size={14} className="inline mr-1"/> Import
+                <div key={t} className="flex items-center gap-3 mb-4 pb-4 border-b last:border-0 last:pb-0 border-slate-50">
+                    <div className="w-20 text-[11px] font-black uppercase tracking-wider text-slate-400">{t.replace('Types','')}</div>
+                    <button onClick={() => downloadTemplate(t as any)} className="p-2.5 text-blue-600 bg-blue-50 rounded-xl text-[10px] font-black hover:bg-blue-100 transition-colors uppercase"><Download size={12} className="inline mr-1.5"/> Template</button>
+                    <label className="flex-1 text-center p-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-slate-600 cursor-pointer hover:bg-slate-50 transition-colors uppercase">
+                        <Upload size={12} className="inline mr-1.5"/> Import
                         <input type="file" className="hidden" accept=".csv" onChange={e => handleImportMasters(e, t as any)} />
                     </label>
                 </div>
@@ -198,31 +206,31 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
 
       {activeSection === 'config' && (
         <div className="px-4">
-          <Card title="Google API Configuration">
-            <Input label="Client ID" value={clientId} onChange={e => setClientId(e.target.value)} />
-            <Input label="API Key" value={apiKey} onChange={e => setApiKey(e.target.value)} />
-            <Button onClick={saveConfig} className="mt-2"><Settings size={18} className="mr-2"/> Save Config</Button>
+          <Card title="Cloud Infrastructure">
+            <Input label="Google Client ID" value={clientId} onChange={e => setClientId(e.target.value)} />
+            <Input label="Google API Key" value={apiKey} onChange={e => setApiKey(e.target.value)} />
+            <Button onClick={saveConfig} className="mt-2"><Settings size={18} className="mr-2"/> Save Credentials</Button>
           </Card>
         </div>
       )}
 
       {activeSection === 'vendors' && (
         <div className="px-4">
-          <Card title="Manage Vendors">
-            <div className="grid grid-cols-2 gap-2 mb-4">
-                <Input label="Name" value={newVendor.name} onChange={e => setNewVendor({...newVendor, name: e.target.value})} placeholder="e.g. Acme Corp" />
-                <Input label="Code" value={newVendor.code} onChange={e => setNewVendor({...newVendor, code: e.target.value.toUpperCase()})} placeholder="e.g. ACME" />
+          <Card title="New Vendor Registration">
+            <div className="grid grid-cols-2 gap-3 mb-4">
+                <Input label="Company Name" value={newVendor.name} onChange={e => setNewVendor({...newVendor, name: e.target.value})} placeholder="Acme Corp" />
+                <Input label="Vendor Code" value={newVendor.code} onChange={e => setNewVendor({...newVendor, code: e.target.value.toUpperCase()})} placeholder="ACM" />
             </div>
-            <Button onClick={addVendor} disabled={!newVendor.name || !newVendor.code}>Add Vendor</Button>
+            <Button onClick={addVendor} disabled={!newVendor.name || !newVendor.code}>Register Vendor</Button>
           </Card>
           <div className="space-y-2">
             {state.vendors.map(v => (
-              <div key={v.id} className="bg-white p-3 rounded-lg border border-slate-200 flex justify-between items-center shadow-sm">
+              <div key={v.id} className="bg-white p-4 rounded-xl border border-slate-100 flex justify-between items-center shadow-sm">
                 <div>
-                  <div className="font-bold flex items-center">{v.name} {!v.synced && <span className="ml-2 w-2 h-2 rounded-full bg-orange-400" />}</div>
-                  <div className="text-xs text-slate-500">Code: {v.code}</div>
+                  <div className="font-bold text-slate-700 flex items-center">{v.name} {!v.synced && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-orange-400" />}</div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase">{v.code}</div>
                 </div>
-                <button onClick={() => updateState('vendors', state.vendors.filter(x => x.id !== v.id))} className="text-red-500 p-2"><Trash2 size={18} /></button>
+                <button onClick={() => updateState('vendors', state.vendors.filter(x => x.id !== v.id))} className="text-red-400 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
               </div>
             ))}
           </div>
@@ -231,21 +239,21 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
 
       {activeSection === 'items' && (
         <div className="px-4">
-          <Card title="Manage Items">
+          <Card title="New Item Catalog">
             <div className="mb-4">
-               <Input label="SKU Code" value={newItem.sku} onChange={e => setNewItem({...newItem, sku: e.target.value})} placeholder="e.g. ITEM-001" />
-               <Input label="Description" value={newItem.description} onChange={e => setNewItem({...newItem, description: e.target.value})} placeholder="Description" className="mt-2" />
+               <Input label="SKU Identifier" value={newItem.sku} onChange={e => setNewItem({...newItem, sku: e.target.value.toUpperCase()})} placeholder="ITEM-001" />
+               <Input label="Description (Optional)" value={newItem.description} onChange={e => setNewItem({...newItem, description: e.target.value})} placeholder="Product Details" className="mt-2" />
             </div>
-            <Button onClick={addItem} disabled={!newItem.sku}>Add Item</Button>
+            <Button onClick={addItem} disabled={!newItem.sku}>Catalog Item</Button>
           </Card>
           <div className="space-y-2">
             {state.items.map(i => (
-              <div key={i.id} className="bg-white p-3 rounded-lg border border-slate-200 flex justify-between items-center shadow-sm">
+              <div key={i.id} className="bg-white p-4 rounded-xl border border-slate-100 flex justify-between items-center shadow-sm">
                 <div>
-                  <div className="font-bold flex items-center">{i.sku} {!i.synced && <span className="ml-2 w-2 h-2 rounded-full bg-orange-400" />}</div>
-                  <div className="text-xs text-slate-500">{i.description}</div>
+                  <div className="font-bold text-slate-700 flex items-center">{i.sku} {!i.synced && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-orange-400" />}</div>
+                  <div className="text-[10px] text-slate-400 italic">{i.description || 'No description'}</div>
                 </div>
-                <button onClick={() => updateState('items', state.items.filter(x => x.id !== i.id))} className="text-red-500 p-2"><Trash2 size={18} /></button>
+                <button onClick={() => updateState('items', state.items.filter(x => x.id !== i.id))} className="text-red-400 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
               </div>
             ))}
           </div>
@@ -254,15 +262,15 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
 
       {activeSection === 'work' && (
         <div className="px-4">
-           <Card title="Manage Work Types">
-            <Input label="Work Name" value={newWork.name} onChange={e => setNewWork({...newWork, name: e.target.value})} placeholder="e.g. Polishing" />
-            <Button onClick={addWork} disabled={!newWork.name}>Add Work Type</Button>
+           <Card title="Work Processes">
+            <Input label="Process Name" value={newWork.name} onChange={e => setNewWork({...newWork, name: e.target.value})} placeholder="Polishing" />
+            <Button onClick={addWork} disabled={!newWork.name}>Add Process</Button>
           </Card>
           <div className="space-y-2">
             {state.workTypes.map(w => (
-              <div key={w.id} className="bg-white p-3 rounded-lg border border-slate-200 flex justify-between items-center shadow-sm">
-                <div className="font-bold flex items-center">{w.name} {!w.synced && <span className="ml-2 w-2 h-2 rounded-full bg-orange-400" />}</div>
-                <button onClick={() => updateState('workTypes', state.workTypes.filter(x => x.id !== w.id))} className="text-red-500 p-2"><Trash2 size={18} /></button>
+              <div key={w.id} className="bg-white p-4 rounded-xl border border-slate-100 flex justify-between items-center shadow-sm">
+                <div className="font-bold text-slate-700 flex items-center">{w.name} {!w.synced && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-orange-400" />}</div>
+                <button onClick={() => updateState('workTypes', state.workTypes.filter(x => x.id !== w.id))} className="text-red-400 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
               </div>
             ))}
           </div>
@@ -271,15 +279,15 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
 
       {activeSection === 'users' && (
         <div className="px-4">
-           <Card title="Manage Users">
-            <Input label="User Name" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="e.g. John Doe" />
-            <Button onClick={addUser} disabled={!newUser.name}>Add User</Button>
+           <Card title="System Operators">
+            <Input label="Operator Name" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} placeholder="John Smith" />
+            <Button onClick={addUser} disabled={!newUser.name}>Add Operator</Button>
           </Card>
           <div className="space-y-2">
             {state.users.map(u => (
-              <div key={u.id} className="bg-white p-3 rounded-lg border border-slate-200 flex justify-between items-center shadow-sm">
-                <div className="font-bold flex items-center">{u.name} {!u.synced && <span className="ml-2 w-2 h-2 rounded-full bg-orange-400" />}</div>
-                <button onClick={() => updateState('users', state.users.filter(x => x.id !== u.id))} className="text-red-500 p-2"><Trash2 size={18} /></button>
+              <div key={u.id} className="bg-white p-4 rounded-xl border border-slate-100 flex justify-between items-center shadow-sm">
+                <div className="font-bold text-slate-700 flex items-center">{u.name} {!u.synced && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-orange-400" />}</div>
+                <button onClick={() => updateState('users', state.users.filter(x => x.id !== u.id))} className="text-red-400 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
               </div>
             ))}
           </div>
