@@ -32,7 +32,7 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   };
 
   const handleDownloadReconReport = () => {
-    // Exact Format requested:
+    // Format requested (From Column A):
     // status | vendor | sent date | recieved date | challan no. | work done | sku | qty sent | qty rec | short qty | combo qty sent | combo qty recieved | combo qty short | inward checked by | inward remarks | outward checked by | outward remarks
     
     const reportData = state.outwardEntries.map(o => {
@@ -45,19 +45,20 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
         const work = state.workTypes.find(w => w.id === o.workId);
         
         const isClosed = o.status === 'COMPLETED';
-        const isDone = inQty >= o.qty;
+        const isDone = inQty >= o.qty && o.qty > 0;
         
-        let statusStr = 'Pending';
+        let statusStr = 'pending';
         if (isClosed) statusStr = o.qty > inQty ? 'short qty completed' : 'complete';
         else if (isDone) statusStr = 'complete';
 
-        // Aggregate multiple values
+        // Aggregate inward values separated by semicolons
         const recvDatesStr = Array.from(new Set(ins.map(i => i.date.split('T')[0]))).sort().join('; ');
         const inwardCheckedBy = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
         const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
 
+        // Using direct lowercase keys as requested for Column A mapping
         return {
-            'status': statusStr,
+            'status(complete/pending/short qty completed)': statusStr,
             'vendor': vendor?.name || 'Unknown',
             'sent date': o.date.split('T')[0],
             'recieved date': recvDatesStr || '---',
@@ -66,7 +67,7 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
             'sku': item?.sku || 'Unknown',
             'qty sent': o.qty,
             'qty rec': inQty,
-            'short qty': isClosed ? Math.max(0, o.qty - inQty) : 0,
+            'short qty': isClosed ? Math.max(0, o.qty - inQty) : (isDone ? 0 : 0),
             'combo qty sent': o.comboQty ?? 0,
             'combo qty recieved': inCombo,
             'combo qty short': isClosed ? Math.max(0, (o.comboQty ?? 0) - inCombo) : 0,
@@ -174,9 +175,9 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
         <div className="px-4 space-y-4">
            <Card title="Download Reports">
               <Button onClick={handleDownloadReconReport} variant="primary" className="mb-2">
-                 <BarChart3 size={18} className="mr-2"/> Download Reconciliation Report (Exact Format)
+                 <BarChart3 size={18} className="mr-2"/> Download Reconciliation Report
               </Button>
-              <p className="text-[10px] text-slate-400 text-center italic">Column order: Status, Vendor, Sent Date, Received Date, Challan No, Work, SKU, Qtys, Checked By, Remarks.</p>
+              <p className="text-[10px] text-slate-400 text-center italic">Columns: Status, Vendor, Dates, Challan, Work, SKU, Qtys, Checked By, Remarks.</p>
            </Card>
 
            <Card title="Import Masters">

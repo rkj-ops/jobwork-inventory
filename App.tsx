@@ -10,35 +10,46 @@ import Outward from './pages/Outward';
 import Inward from './pages/Inward';
 import Report from './pages/Report';
 
-const APP_VERSION = "2.4.2-stable";
+const APP_VERSION = "2.4.5-stable-reco";
 
 const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState('outward');
   const [state, setState] = useState<AppState>(loadData());
   const [isSyncing, setIsSyncing] = useState(false);
   const tokenClient = useRef<any>(null);
-
-  useEffect(() => { saveData(state); }, [state]);
+  
+  // Use a ref to always have access to the latest state within sync callbacks
+  const stateRef = useRef<AppState>(state);
+  useEffect(() => {
+    stateRef.current = state;
+    saveData(state);
+  }, [state]);
 
   const updateState = (k: keyof AppState, v: any) => setState(prev => ({ ...prev, [k]: v }));
   
   const addOutwardEntry = (entry: OutwardEntry) => {
-    setState(prev => ({ ...prev, outwardEntries: [...prev.outwardEntries, entry] }));
-    triggerAutoSync();
+    const newState = { ...state, outwardEntries: [...state.outwardEntries, entry] };
+    setState(newState);
+    // Trigger sync with the specific new state to avoid race conditions
+    triggerAutoSync(newState);
   };
 
   const addInwardEntry = (entry: InwardEntry) => {
-    setState(prev => ({ ...prev, inwardEntries: [...prev.inwardEntries, entry] }));
-    triggerAutoSync();
+    const newState = { ...state, inwardEntries: [...state.inwardEntries, entry] };
+    setState(newState);
+    triggerAutoSync(newState);
   };
 
   const handleAddItem = (item: Item) => setState(prev => ({ ...prev, items: [...prev.items, item] }));
   const handleSyncComplete = (newState: AppState) => setState(newState);
 
-  const triggerAutoSync = async () => {
+  const triggerAutoSync = async (latestState?: AppState) => {
     const apiKey = localStorage.getItem('GOOGLE_API_KEY');
     const clientId = localStorage.getItem('GOOGLE_CLIENT_ID');
     if (!apiKey || !clientId || isSyncing) return;
+
+    // Use the passed state or the ref value (guaranteed latest)
+    const dataToSync = latestState || stateRef.current;
 
     setIsSyncing(true);
     try {
@@ -51,7 +62,8 @@ const App: React.FC = () => {
           callback: async (resp: any) => {
             if (resp.error) { setIsSyncing(false); return; }
             (window as any).gapi.client.setToken(resp);
-            await syncDataToSheets(state, handleSyncComplete);
+            // Always sync the state that was intended to be synced
+            await syncDataToSheets(dataToSync, handleSyncComplete);
             setIsSyncing(false);
           },
         });
@@ -102,8 +114,8 @@ const App: React.FC = () => {
         {renderContent()}
       </main>
       
-      <footer className="w-full text-center py-4 pb-28 text-[10px] font-mono text-slate-400 tracking-widest no-print">
-          DEPLOYMENT VERSION: {APP_VERSION}
+      <footer className="w-full text-center py-6 pb-32 text-[10px] font-mono text-slate-400 tracking-widest no-print">
+          JW TRACKER SYSTEM • DEPLOYMENT VERSION: {APP_VERSION}
       </footer>
 
       <TabBar currentTab={currentTab} setTab={setCurrentTab} />
