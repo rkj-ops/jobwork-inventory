@@ -2,8 +2,9 @@ import React, { useMemo, useState, useRef } from 'react';
 import { AppState, OutwardEntry, InwardEntry } from '../types';
 import { Card, Button } from '../components/ui';
 import { syncDataToSheets, initGapi } from '../services/sheets';
-import { ChevronDown, ChevronUp, Trash2, Printer, CheckCircle, Search, Info, Calendar } from 'lucide-react';
+import { ChevronDown, ChevronUp, Trash2, Printer, CheckCircle, Search, Info, Calendar, ScanBarcode } from 'lucide-react';
 import PrintChallan from '../components/PrintChallan';
+import JsBarcode from 'jsbarcode';
 
 interface ReportRow extends OutwardEntry {
   vendorName: string;
@@ -94,6 +95,48 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
         );
         updateState('outwardEntries', updatedOutwards);
         if(detailView) setDetailView(null);
+    }
+  };
+
+  const printLabel = (sku: string) => {
+    if (!sku) return;
+    const canvas = document.createElement('canvas');
+    try {
+        JsBarcode(canvas, sku, {
+            format: "CODE128",
+            displayValue: false,
+            margin: 0,
+            height: 50,
+            width: 2
+        });
+        const barcodeData = canvas.toDataURL("image/png");
+        const win = window.open('', '', 'width=400,height=300');
+        if (win) {
+            win.document.write(`
+                <html>
+                <head><style>
+                    @page { size: 50mm 25mm; margin: 0; }
+                    body { margin: 0; padding: 0; width: 50mm; height: 25mm; display: flex; flex-direction: column; align-items: center; justify-content: space-between; font-family: sans-serif; overflow: hidden; }
+                    .top { height: 10mm; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-top: 1mm;}
+                    .bottom { height: 14mm; width: 100%; display: flex; justify-content: center; align-items: flex-start; }
+                    .sku { font-weight: bold; font-size: 11pt; text-align: center; margin-top: 1px; }
+                    .barcode-img { height: 12mm; max-width: 48mm; }
+                </style></head>
+                <body>
+                    <div class="top">
+                        <div class="sku">${sku}</div>
+                    </div>
+                    <div class="bottom">
+                        <img src="${barcodeData}" class="barcode-img" />
+                    </div>
+                    <script>window.print(); window.close();</script>
+                </body>
+                </html>
+            `);
+            win.document.close();
+        }
+    } catch (e) {
+        console.error("Barcode generation failed", e);
     }
   };
 
@@ -285,7 +328,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                             <div className="text-xs text-slate-400 font-mono mt-0.5">CH#{r.challanNo} • {new Date(r.date).toLocaleDateString()}</div>
                         </div>
                         <div className="flex gap-1">
-                          <button onClick={(e) => { e.stopPropagation(); setPrintEntry(r); setTimeout(()=>window.print(),100); }} className="text-blue-500 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Printer size={18}/></button>
+                          <button onClick={(e) => { e.stopPropagation(); printLabel(r.itemSku); }} className="text-blue-500 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><ScanBarcode size={18}/></button>
+                          <button onClick={(e) => { e.stopPropagation(); setPrintEntry(r); setTimeout(()=>window.print(),100); }} className="text-green-500 bg-green-50 p-2 rounded-lg hover:bg-green-100"><Printer size={18}/></button>
                           <div className="text-slate-300 p-2 group-hover:text-blue-400 transition-colors"><Info size={18} /></div>
                         </div>
                     </div>

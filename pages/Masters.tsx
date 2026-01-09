@@ -32,13 +32,11 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   };
 
   const handleDownloadReconReport = () => {
-    // Exact column sequence requested starting from Column A:
-    // status(complete/pending/short qty completed) | vendor | sent date | recieved date | challan no. | work done | sku | qty sent | qty rec | short qty | combo qty sent | combo qty recieved | combo qty short | inward checked by | inward remarks | outward checked by | outward remarks
-    
     const reportData = state.outwardEntries.map(o => {
         const ins = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
         const inQty = ins.reduce((s, i) => s + i.qty, 0);
         const inCombo = ins.reduce((s, i) => s + (i.comboQty ?? 0), 0);
+        const twRec = ins.reduce((s, i) => s + i.totalWeight, 0);
         
         const vendor = state.vendors.find(v => v.id === o.vendorId);
         const item = state.items.find(i => i.id === o.skuId);
@@ -54,12 +52,11 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
             statusStr = 'complete';
         }
 
-        // Aggregate multiple inward data points
         const recvDatesStr = Array.from(new Set(ins.map(i => i.date.split('T')[0]))).sort().join('; ');
         const inwardCheckedBy = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
         const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
 
-        // Return object with the exact keys provided in the prompt for Column A mapping
+        // Format requested (20 columns from A to T)
         return {
             'status(complete/pending/short qty completed)': statusStr,
             'vendor': vendor?.name || 'Unknown',
@@ -70,10 +67,13 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
             'sku': item?.sku || 'Unknown',
             'qty sent': o.qty,
             'qty rec': inQty,
-            'short qty': isMarkedClosed ? Math.max(0, o.qty - inQty) : 0,
+            'short qty': Math.max(0, o.qty - inQty),
             'combo qty sent': o.comboQty ?? 0,
             'combo qty recieved': inCombo,
-            'combo qty short': isMarkedClosed ? Math.max(0, (o.comboQty ?? 0) - inCombo) : 0,
+            'combo qty short': Math.max(0, (o.comboQty ?? 0) - inCombo),
+            'TW Sent': o.totalWeight,
+            'TW Received': twRec,
+            'short/excess weight': (o.totalWeight - twRec).toFixed(3),
             'inward checked by': inwardCheckedBy || '---',
             'inward remarks': inwardRemarks || '---',
             'outward checked by': o.checkedBy || '---',
@@ -181,9 +181,9 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
                  <BarChart3 size={20} className="mr-3"/> Export Reconciliation Report (CSV)
               </Button>
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Column Order (A-Q)</h4>
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Column Order (A-T)</h4>
                 <p className="text-[10px] text-slate-500 font-mono leading-relaxed">
-                  Status, Vendor, Sent Date, Received Date, Challan No, Work Done, SKU, Qty Sent, Qty Rec, Short Qty, Combo Sent, Combo Rec, Combo Short, Inward Checked, Inward Remarks, Outward Checked, Outward Remarks.
+                  Status, Vendor, Sent Date, Recv Date, Challan, Work, SKU, Qty Sent, Qty Rec, Short Qty, Combo Sent, Combo Rec, Combo Short, TW Sent, TW Rec, Wt Diff, Inward Check, Inward Rem, Outward Check, Outward Rem.
                 </p>
               </div>
            </Card>

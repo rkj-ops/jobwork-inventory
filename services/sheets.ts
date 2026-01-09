@@ -187,17 +187,55 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], remarks: r[12], synced: true
     }));
 
-    // UPDATE RECONCILIATION SUMMARY SHEET
+    // UPDATE RECONCILIATION SUMMARY SHEET (20 Columns format)
     const reconRows = finalOutward.map(o => {
         const ins = finalInward.filter(i => i.outwardChallanId === o.id);
         const inQty = ins.reduce((s, i) => s + i.qty, 0);
-        const pending = o.status === 'COMPLETED' ? 0 : Math.max(0, o.qty - inQty);
-        return [ o.challanNo, allVendors.find(v => v.id === o.vendorId)?.name || '', allItems.find(i => i.id === o.skuId)?.sku || '', o.qty, inQty, pending, o.status || 'OPEN', timestamp ];
+        const inCombo = ins.reduce((s, i) => s + (i.comboQty || 0), 0);
+        const twRec = ins.reduce((s, i) => s + i.totalWeight, 0);
+        
+        const isMarkedClosed = o.status === 'COMPLETED';
+        const isActuallyDone = inQty >= o.qty && o.qty > 0;
+        
+        let statusStr = 'pending';
+        if (isMarkedClosed) {
+            statusStr = o.qty > inQty ? 'short qty completed' : 'complete';
+        } else if (isActuallyDone) {
+            statusStr = 'complete';
+        }
+
+        const recvDatesStr = Array.from(new Set(ins.map(i => i.date.split('T')[0]))).sort().join('; ');
+        const inwardChecked = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
+        const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
+
+        // COLUMNS A-T (20 total)
+        return [
+            statusStr, // status
+            allVendors.find(v => v.id === o.vendorId)?.name || 'Unknown', // vendor
+            o.date.split('T')[0], // sent date
+            recvDatesStr || '---', // recieved date
+            o.challanNo, // challan no.
+            allWorks.find(w => w.id === o.workId)?.name || '', // work done
+            allItems.find(i => i.id === o.skuId)?.sku || 'Unknown', // sku
+            o.qty, // qty sent
+            inQty, // qty rec
+            Math.max(0, o.qty - inQty), // short qty
+            o.comboQty || 0, // combo qty sent
+            inCombo, // combo qty recieved
+            Math.max(0, (o.comboQty || 0) - inCombo), // combo qty short
+            o.totalWeight, // TW Sent
+            twRec, // TW Received
+            (o.totalWeight - twRec).toFixed(3), // short/excess weight
+            inwardChecked || '---', // inward checked by
+            inwardRemarks || '---', // inward remarks
+            o.checkedBy || '---', // outward checked by
+            o.remarks || '---' // outward remarks
+        ];
     });
     
     if (reconRows.length) {
         await gapi.client.sheets.spreadsheets.values.update({
-            spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:H${reconRows.length + 1}`,
+            spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:T${reconRows.length + 1}`,
             valueInputOption: "USER_ENTERED", resource: { values: reconRows }
         });
     }
