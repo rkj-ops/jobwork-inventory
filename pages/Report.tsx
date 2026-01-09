@@ -2,7 +2,7 @@ import React, { useMemo, useState, useRef } from 'react';
 import { AppState, OutwardEntry, InwardEntry } from '../types';
 import { Card, Button } from '../components/ui';
 import { syncDataToSheets, initGapi } from '../services/sheets';
-import { ChevronDown, ChevronUp, Trash2, Printer, CheckCircle, Search, Info } from 'lucide-react';
+import { ChevronDown, ChevronUp, Trash2, Printer, CheckCircle, Search, Info, Calendar } from 'lucide-react';
 import PrintChallan from '../components/PrintChallan';
 
 interface ReportRow extends OutwardEntry {
@@ -16,6 +16,7 @@ interface ReportRow extends OutwardEntry {
   shortComboQty: number;
   pending: number;
   lastRecvDate: string | null;
+  recvDates: string[]; 
   inwards: InwardEntry[];
 }
 
@@ -102,7 +103,9 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
         const inQty = inwards.reduce((s, i) => s + i.qty, 0);
         const inComboQty = inwards.reduce((s, i) => s + (i.comboQty || 0), 0);
         
-        const lastRecvDate = inwards.length > 0 ? inwards.map(i => i.date).sort().pop() || null : null;
+        const recvDates = Array.from(new Set(inwards.map(i => i.date.split('T')[0]))).sort();
+        const lastRecvDate = recvDates.length > 0 ? recvDates[recvDates.length - 1] : null;
+
         const vendor = state.vendors.find(v => v.id === o.vendorId);
         const item = state.items.find(i => i.id === o.skuId);
         const work = state.workTypes.find(w => w.id === o.workId);
@@ -125,6 +128,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             shortComboQty,
             pending,
             lastRecvDate,
+            recvDates,
             inwards
         };
     });
@@ -172,11 +176,16 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                           <p><strong>Work:</strong> {detailView.workName}</p>
                           <p><strong>Sent Date:</strong> {new Date(detailView.date).toLocaleDateString()}</p>
                           <p><strong>Status:</strong> <span className={`font-bold ${detailView.status === 'COMPLETED' ? 'text-green-600' : 'text-orange-600'}`}>{detailView.status || 'OPEN'}</span></p>
-                          <p><strong>Sent Qty:</strong> {detailView.qty} (Combo: {detailView.comboQty || 0})</p>
-                          <p><strong>Recv Qty:</strong> {detailView.inQty} (Combo: {detailView.inComboQty || 0})</p>
+                          <p><strong>Sent Qty:</strong> {detailView.qty} (Combo: {detailView.comboQty ?? 0})</p>
+                          <p><strong>Recv Qty:</strong> {detailView.inQty} (Combo: {detailView.inComboQty})</p>
                           <p><strong>Entered By:</strong> {detailView.enteredBy || 'Admin'}</p>
                           <p><strong>Checked By:</strong> {detailView.checkedBy || '---'}</p>
                         </div>
+                        {detailView.recvDates.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-blue-200">
+                             <p><strong>Received Dates:</strong> {detailView.recvDates.map(d => new Date(d).toLocaleDateString()).join(', ')}</p>
+                          </div>
+                        )}
                         {detailView.status === 'COMPLETED' && (detailView.shortQty > 0 || detailView.shortComboQty > 0) && (
                           <div className="mt-2 pt-2 border-t border-blue-200 text-red-600 font-bold">
                              <p>Short Qty: {detailView.shortQty}</p>
@@ -201,7 +210,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                                         <tr key={i.id} className="border-b last:border-0 hover:bg-slate-50">
                                             <td className="p-2">{new Date(i.date).toLocaleDateString()}</td>
                                             <td className="p-2 text-right font-bold">{i.qty}</td>
-                                            <td className="p-2 text-right">{i.comboQty || 0}</td>
+                                            <td className="p-2 text-right">{i.comboQty ?? 0}</td>
                                             <td className="p-2 text-slate-500 text-[10px]">{i.enteredBy}</td>
                                         </tr>
                                     ))}
@@ -286,10 +295,16 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                             <div className="text-sm font-bold text-slate-700 block">
                                 {r.inQty} / {r.qty} <span className="text-slate-400 font-normal">Recv.</span>
                             </div>
-                            {r.comboQty > 0 && (
+                            {(r.comboQty ?? 0) > 0 && (
                                <div className="text-[10px] text-slate-500 italic">
                                   Combos: {r.inComboQty} / {r.comboQty}
                                </div>
+                            )}
+                            {r.recvDates.length > 0 && (
+                                <div className="flex items-center text-[10px] text-blue-600 mt-1">
+                                    <Calendar size={10} className="mr-1"/> 
+                                    <span className="truncate max-w-[150px]">{r.recvDates.map(d => new Date(d).toLocaleDateString()).join(', ')}</span>
+                                </div>
                             )}
                         </div>
                         {!isCompleted ? (

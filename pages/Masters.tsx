@@ -32,35 +32,50 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   };
 
   const handleDownloadReconReport = () => {
+    // Format requested starting from Column A:
+    // status(complete/pending/short qty completed) | vendor | sent date | recieved date | challan no. | work done | sku | qty sent | qty rec | short qty | combo qty sent | combo qty recieved | combo qty short | inward checked by | inward remarks | outward checked by | outward remarks
+    
     const reportData = state.outwardEntries.map(o => {
-        const inwards = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
-        const inQty = inwards.reduce((s, i) => s + i.qty, 0);
-        const inCombo = inwards.reduce((s, i) => s + (i.comboQty || 0), 0);
+        const ins = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
+        const inQty = ins.reduce((s, i) => s + i.qty, 0);
+        const inCombo = ins.reduce((s, i) => s + (i.comboQty ?? 0), 0);
         
         const vendor = state.vendors.find(v => v.id === o.vendorId);
         const item = state.items.find(i => i.id === o.skuId);
         const work = state.workTypes.find(w => w.id === o.workId);
         
-        const isComp = o.status === 'COMPLETED' || inQty >= o.qty;
+        const isClosed = o.status === 'COMPLETED';
+        const isDone = inQty >= o.qty;
         
+        let statusStr = 'Pending';
+        if (isClosed) statusStr = o.qty > inQty ? 'Short Qty Completed' : 'Completed';
+        else if (isDone) statusStr = 'Completed';
+
+        const recvDatesStr = Array.from(new Set(ins.map(i => i.date.split('T')[0]))).sort().join('; ');
+        const inwardCheckedBy = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
+        const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
+
         return {
-            Status: isComp ? (o.qty > inQty ? 'Short Qty Completed' : 'Completed') : 'Pending',
-            Vendor: vendor?.name || 'Unknown',
-            ChallanNo: o.challanNo,
-            Date: o.date.split('T')[0],
-            SKU: item?.sku || 'Unknown',
-            Work: work?.name || '',
-            QtySent: o.qty,
-            QtyRec: inQty,
-            ShortQty: o.status === 'COMPLETED' ? Math.max(0, o.qty - inQty) : 0,
-            ComboSent: o.comboQty || 0,
-            ComboRec: inCombo,
-            ShortCombo: o.status === 'COMPLETED' ? Math.max(0, (o.comboQty || 0) - inCombo) : 0,
-            EnteredBy: o.enteredBy || 'Admin',
-            CheckedBy: o.checkedBy || '---',
-            Remarks: o.remarks || ''
+            'Status': statusStr,
+            'Vendor': vendor?.name || 'Unknown',
+            'Sent Date': o.date.split('T')[0],
+            'Received Date': recvDatesStr || '---',
+            'Challan No': o.challanNo,
+            'Work Done': work?.name || '',
+            'SKU': item?.sku || 'Unknown',
+            'Qty Sent': o.qty,
+            'Qty Rec': inQty,
+            'Short Qty': isClosed ? Math.max(0, o.qty - inQty) : 0,
+            'Combo Qty Sent': o.comboQty ?? 0,
+            'Combo Qty Received': inCombo,
+            'Combo Qty Short': isClosed ? Math.max(0, (o.comboQty ?? 0) - inCombo) : 0,
+            'Inward Checked By': inwardCheckedBy || '---',
+            'Inward Remarks': inwardRemarks || '---',
+            'Outward Checked By': o.checkedBy || '---',
+            'Outward Remarks': o.remarks || '---'
         };
     });
+    
     exportToCSV(reportData, `Reconciliation_Report_${new Date().toISOString().split('T')[0]}`);
   };
 
@@ -158,9 +173,9 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
         <div className="px-4 space-y-4">
            <Card title="Download Reports">
               <Button onClick={handleDownloadReconReport} variant="primary" className="mb-2">
-                 <BarChart3 size={18} className="mr-2"/> Download Full Reconciliation CSV
+                 <BarChart3 size={18} className="mr-2"/> Download Reconciliation Report (Exact Format)
               </Button>
-              <p className="text-[10px] text-slate-400 text-center italic">Includes Qty, Combo Qty, Short Detail & Audit Trail.</p>
+              <p className="text-[10px] text-slate-400 text-center italic">Column order: Status, Vendor, Sent Date, Received Date, Challan No, Work, SKU, Qtys, Checked By, Remarks.</p>
            </Card>
 
            <Card title="Import Masters">
