@@ -114,7 +114,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
         const pending = isClosed ? 0 : Math.max(0, o.qty - inQty);
         
         const shortQty = isClosed ? Math.max(0, o.qty - inQty) : 0;
-        const shortComboQty = isClosed ? Math.max(0, (o.comboQty || 0) - inComboQty) : 0;
+        const shortComboQty = isClosed ? Math.max(0, (o.comboQty ?? 0) - inComboQty) : 0;
 
         return {
             ...o,

@@ -10,6 +10,8 @@ import Outward from './pages/Outward';
 import Inward from './pages/Inward';
 import Report from './pages/Report';
 
+const APP_VERSION = "2.4.2-stable";
+
 const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState('outward');
   const [state, setState] = useState<AppState>(loadData());
@@ -86,7 +88,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 flex flex-col">
       <Header 
         title={getTitle()} 
         action={isSyncing && (
@@ -96,9 +98,14 @@ const App: React.FC = () => {
           </div>
         )}
       />
-      <main className="max-w-5xl mx-auto">
+      <main className="max-w-5xl mx-auto flex-1 w-full">
         {renderContent()}
       </main>
+      
+      <footer className="w-full text-center py-4 pb-28 text-[10px] font-mono text-slate-400 tracking-widest no-print">
+          DEPLOYMENT VERSION: {APP_VERSION}
+      </footer>
+
       <TabBar currentTab={currentTab} setTab={setCurrentTab} />
     </div>
   );

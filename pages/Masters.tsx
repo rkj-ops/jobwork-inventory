@@ -32,8 +32,8 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   };
 
   const handleDownloadReconReport = () => {
-    // Format requested starting from Column A:
-    // status(complete/pending/short qty completed) | vendor | sent date | recieved date | challan no. | work done | sku | qty sent | qty rec | short qty | combo qty sent | combo qty recieved | combo qty short | inward checked by | inward remarks | outward checked by | outward remarks
+    // Exact Format requested:
+    // status | vendor | sent date | recieved date | challan no. | work done | sku | qty sent | qty rec | short qty | combo qty sent | combo qty recieved | combo qty short | inward checked by | inward remarks | outward checked by | outward remarks
     
     const reportData = state.outwardEntries.map(o => {
         const ins = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
@@ -48,31 +48,32 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
         const isDone = inQty >= o.qty;
         
         let statusStr = 'Pending';
-        if (isClosed) statusStr = o.qty > inQty ? 'Short Qty Completed' : 'Completed';
-        else if (isDone) statusStr = 'Completed';
+        if (isClosed) statusStr = o.qty > inQty ? 'short qty completed' : 'complete';
+        else if (isDone) statusStr = 'complete';
 
+        // Aggregate multiple values
         const recvDatesStr = Array.from(new Set(ins.map(i => i.date.split('T')[0]))).sort().join('; ');
         const inwardCheckedBy = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
         const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
 
         return {
-            'Status': statusStr,
-            'Vendor': vendor?.name || 'Unknown',
-            'Sent Date': o.date.split('T')[0],
-            'Received Date': recvDatesStr || '---',
-            'Challan No': o.challanNo,
-            'Work Done': work?.name || '',
-            'SKU': item?.sku || 'Unknown',
-            'Qty Sent': o.qty,
-            'Qty Rec': inQty,
-            'Short Qty': isClosed ? Math.max(0, o.qty - inQty) : 0,
-            'Combo Qty Sent': o.comboQty ?? 0,
-            'Combo Qty Received': inCombo,
-            'Combo Qty Short': isClosed ? Math.max(0, (o.comboQty ?? 0) - inCombo) : 0,
-            'Inward Checked By': inwardCheckedBy || '---',
-            'Inward Remarks': inwardRemarks || '---',
-            'Outward Checked By': o.checkedBy || '---',
-            'Outward Remarks': o.remarks || '---'
+            'status': statusStr,
+            'vendor': vendor?.name || 'Unknown',
+            'sent date': o.date.split('T')[0],
+            'recieved date': recvDatesStr || '---',
+            'challan no.': o.challanNo,
+            'work done': work?.name || '',
+            'sku': item?.sku || 'Unknown',
+            'qty sent': o.qty,
+            'qty rec': inQty,
+            'short qty': isClosed ? Math.max(0, o.qty - inQty) : 0,
+            'combo qty sent': o.comboQty ?? 0,
+            'combo qty recieved': inCombo,
+            'combo qty short': isClosed ? Math.max(0, (o.comboQty ?? 0) - inCombo) : 0,
+            'inward checked by': inwardCheckedBy || '---',
+            'inward remarks': inwardRemarks || '---',
+            'outward checked by': o.checkedBy || '---',
+            'outward remarks': o.remarks || '---'
         };
     });
     
