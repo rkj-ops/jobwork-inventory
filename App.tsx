@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppState, Vendor, Item, WorkType, OutwardEntry, InwardEntry } from './types';
 import { loadData, saveData } from './services/storage';
 import { Header, TabBar } from './components/ui';
+import { initGapi, syncDataToSheets } from './services/sheets';
+import { RefreshCw } from 'lucide-react';
 
 import Masters from './pages/Masters';
 import Outward from './pages/Outward';
@@ -11,18 +13,56 @@ import Report from './pages/Report';
 const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState('outward');
   const [state, setState] = useState<AppState>(loadData());
+  const [isSyncing, setIsSyncing] = useState(false);
+  const tokenClient = useRef<any>(null);
 
   useEffect(() => { saveData(state); }, [state]);
 
   const updateState = (k: keyof AppState, v: any) => setState(prev => ({ ...prev, [k]: v }));
   
-  const addOutwardEntry = (entry: OutwardEntry) => setState(prev => ({ ...prev, outwardEntries: [...prev.outwardEntries, entry] }));
-  const addInwardEntry = (entry: InwardEntry) => setState(prev => ({ ...prev, inwardEntries: [...prev.inwardEntries, entry] }));
-  const handleAddItem = (item: Item) => setState(prev => ({ ...prev, items: [...prev.items, item] }));
+  const addOutwardEntry = (entry: OutwardEntry) => {
+    setState(prev => ({ ...prev, outwardEntries: [...prev.outwardEntries, entry] }));
+    triggerAutoSync();
+  };
 
-  // Replace entire state with synced data
-  const handleSyncComplete = (newState: AppState) => {
-    setState(newState);
+  const addInwardEntry = (entry: InwardEntry) => {
+    setState(prev => ({ ...prev, inwardEntries: [...prev.inwardEntries, entry] }));
+    triggerAutoSync();
+  };
+
+  const handleAddItem = (item: Item) => setState(prev => ({ ...prev, items: [...prev.items, item] }));
+  const handleSyncComplete = (newState: AppState) => setState(newState);
+
+  const triggerAutoSync = async () => {
+    const apiKey = localStorage.getItem('GOOGLE_API_KEY');
+    const clientId = localStorage.getItem('GOOGLE_CLIENT_ID');
+    if (!apiKey || !clientId || isSyncing) return;
+
+    setIsSyncing(true);
+    try {
+      await initGapi(apiKey);
+      const google = (window as any).google;
+      if (!tokenClient.current && google?.accounts?.oauth2) {
+        tokenClient.current = google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
+          callback: async (resp: any) => {
+            if (resp.error) { setIsSyncing(false); return; }
+            (window as any).gapi.client.setToken(resp);
+            await syncDataToSheets(state, handleSyncComplete);
+            setIsSyncing(false);
+          },
+        });
+      }
+      if (tokenClient.current) {
+        tokenClient.current.requestAccessToken({ prompt: '' });
+      } else {
+        setIsSyncing(false);
+      }
+    } catch (e) {
+      console.error("Auto-sync failed", e);
+      setIsSyncing(false);
+    }
   };
 
   const renderContent = () => {
@@ -47,7 +87,15 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <Header title={getTitle()} />
+      <Header 
+        title={getTitle()} 
+        action={isSyncing && (
+          <div className="flex items-center text-blue-600 text-[10px] font-bold uppercase tracking-widest bg-blue-50 px-2 py-1 rounded-full animate-pulse">
+            <RefreshCw size={12} className="mr-1 animate-spin" />
+            Syncing
+          </div>
+        )}
+      />
       <main className="max-w-5xl mx-auto">
         {renderContent()}
       </main>

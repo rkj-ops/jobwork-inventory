@@ -2,7 +2,6 @@ import React, { useMemo, useState, useRef } from 'react';
 import { AppState, OutwardEntry, InwardEntry } from '../types';
 import { Card, Button } from '../components/ui';
 import { syncDataToSheets, initGapi } from '../services/sheets';
-import { exportToCSV } from '../services/csv';
 import { ChevronDown, ChevronUp, Trash2, Printer, CheckCircle, Search } from 'lucide-react';
 import PrintChallan from '../components/PrintChallan';
 
@@ -18,7 +17,6 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
   const [printEntry, setPrintEntry] = useState<OutwardEntry | null>(null);
   const [detailView, setDetailView] = useState<{ outward: OutwardEntry, inwards: InwardEntry[] } | null>(null);
   
-  // Filters & Sorting
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -58,7 +56,6 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
   const handleSync = async () => {
     const apiKey = localStorage.getItem('GOOGLE_API_KEY');
     const clientId = localStorage.getItem('GOOGLE_CLIENT_ID');
-
     if (!apiKey || !clientId) { 
         alert("Please configure API Keys in Setup menu first.");
         return; 
@@ -69,7 +66,6 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
       if (!tokenClient.current) initTokenClient(clientId);
       tokenClient.current.requestAccessToken({ prompt: '' });
     } catch (e: any) {
-      console.error(e);
       setSyncStatus(`Error: ${e.message}`);
       setIsSyncing(false);
     }
@@ -86,25 +82,15 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
     }
   };
 
-  // Process Data
   const reportData = useMemo(() => {
     let rows = state.outwardEntries.map(o => {
         const inwards = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
         const inQty = inwards.reduce((s, i) => s + i.qty, 0);
-        const inComboQty = inwards.reduce((s, i) => s + (i.comboQty || 0), 0);
-        
-        const lastRecvDate = inwards.length > 0 
-            ? inwards.map(i => i.date).sort().pop() 
-            : null;
+        const lastRecvDate = inwards.length > 0 ? inwards.map(i => i.date).sort().pop() : null;
         const vendor = state.vendors.find(v => v.id === o.vendorId);
         const item = state.items.find(i => i.id === o.skuId);
         const work = state.workTypes.find(w => w.id === o.workId);
-        
-        let pending = o.qty - inQty;
-        const comboPending = (o.comboQty || 0) - inComboQty;
-        
-        // If manually completed, pending is effectively 0 for display logic purposes
-        if(o.status === 'COMPLETED') pending = 0; 
+        let pending = o.status === 'COMPLETED' ? 0 : o.qty - inQty;
 
         return {
             ...o,
@@ -113,87 +99,41 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             itemSku: item?.sku || 'UNK',
             workName: work?.name || '',
             inQty,
-            inComboQty,
             pending,
-            comboPending,
             lastRecvDate,
             inwards
         };
     });
 
-    // Filtering
     if (searchTerm) {
         const lower = searchTerm.toLowerCase();
         rows = rows.filter(r => 
+            r.vendorName.toLowerCase().includes(lower) || 
             r.vendorCode.toLowerCase().includes(lower) || 
             r.challanNo.toLowerCase().includes(lower)
         );
     }
     if (dateFrom) rows = rows.filter(r => r.date >= dateFrom);
     if (dateTo) rows = rows.filter(r => r.date <= dateTo);
+    if (hideCompleted) rows = rows.filter(r => r.pending > 0 && r.status !== 'COMPLETED');
 
-    if (hideCompleted) {
-        rows = rows.filter(r => r.pending > 0 && r.status !== 'COMPLETED');
-    }
-
-    // Sorting
     rows.sort((a, b) => {
         let diff = 0;
         if (sortBy === 'date') diff = new Date(a.date).getTime() - new Date(b.date).getTime();
         if (sortBy === 'qty') diff = a.qty - b.qty;
         if (sortBy === 'overdue') {
             const now = new Date().getTime();
-            const daysA = (now - new Date(a.date).getTime());
-            const daysB = (now - new Date(b.date).getTime());
-            diff = daysA - daysB;
+            diff = (now - new Date(a.date).getTime()) - (now - new Date(b.date).getTime());
         }
         return sortOrder === 'asc' ? diff : -diff;
     });
-
     return rows;
   }, [state, searchTerm, dateFrom, dateTo, sortBy, sortOrder, hideCompleted]);
-
-  const handleDownloadCSV = () => {
-    const dataToExport = reportData.map(r => {
-        let status = 'Pending';
-        if (r.status === 'COMPLETED') {
-            status = r.pending > 0 ? 'Short Qty Completed' : 'Completed';
-        } else if (r.pending <= 0) {
-            status = 'Completed';
-        }
-        const inwardRemarks = Array.from(new Set(r.inwards.map((i: InwardEntry) => i.remarks).filter(Boolean))).join('; ');
-        const inwardEntered = Array.from(new Set(r.inwards.map((i: InwardEntry) => i.enteredBy).filter(Boolean))).join('; ');
-        const inwardChecked = Array.from(new Set(r.inwards.map((i: InwardEntry) => i.checkedBy).filter(Boolean))).join('; ');
-
-        return {
-            Status: status,
-            Vendor: r.vendorName,
-            SentDate: r.date.split('T')[0],
-            RecvDate: r.lastRecvDate ? r.lastRecvDate.split('T')[0] : '---',
-            ChallanNo: r.challanNo,
-            WorkDone: r.workName,
-            SKU: r.itemSku,
-            QtySent: r.qty,
-            QtyRec: r.inQty,
-            ShortQty: r.qty - r.inQty,
-            ComboSent: r.comboQty || 0,
-            ComboRec: r.inComboQty,
-            ComboShort: (r.comboQty || 0) - r.inComboQty,
-            InwardEnteredBy: inwardEntered,
-            InwardCheckedBy: inwardChecked,
-            InwardRemarks: inwardRemarks,
-            OutwardCheckedBy: r.checkedBy || '',
-            OutwardRemarks: r.remarks || ''
-        };
-    });
-    exportToCSV(dataToExport, `Reconciliation_Report_${new Date().toISOString().split('T')[0]}`);
-  };
 
   if (printEntry) return <PrintChallan entry={printEntry} state={state} onClose={() => setPrintEntry(null)} />;
 
   return (
     <div className="p-4 pb-24 max-w-4xl mx-auto">
-      {/* Modal for Details */}
       {detailView && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
@@ -203,35 +143,23 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                 </div>
                 <div className="p-4 max-h-[60vh] overflow-y-auto">
                     <div className="mb-4 bg-blue-50 p-3 rounded-lg text-sm">
-                        <p><strong>Vendor:</strong> {state.vendors.find(v => v.id === detailView.outward.vendorId)?.name}</p>
-                        <p><strong>Work Done:</strong> {state.workTypes.find(w => w.id === detailView.outward.workId)?.name}</p>
+                        <p><strong>Vendor:</strong> {detailView.outward.vendorName}</p>
                         <p><strong>Sent Date:</strong> {new Date(detailView.outward.date).toLocaleDateString()}</p>
                         <p><strong>Total Qty:</strong> {detailView.outward.qty}</p>
-                        <p><strong>Combo Qty:</strong> {detailView.outward.comboQty || 0}</p>
                         <p><strong>Status:</strong> {detailView.outward.status || 'OPEN'}</p>
                     </div>
                     <h4 className="font-bold text-xs uppercase text-slate-500 mb-2">Inward History</h4>
                     {detailView.inwards.length === 0 ? <p className="text-slate-400 italic text-sm">No items received yet.</p> : (
                         <div className="overflow-x-auto">
-                            <table className="w-full text-sm min-w-[400px]">
+                            <table className="w-full text-sm">
                                 <thead className="bg-slate-100">
-                                    <tr>
-                                        <th className="p-2 text-left">Date</th>
-                                        <th className="p-2 text-right">Qty</th>
-                                        <th className="p-2 text-right">Combo</th>
-                                        <th className="p-2 text-left">Entered</th>
-                                        <th className="p-2 text-left">Checked</th>
-                                        <th className="p-2 text-left">Remarks</th>
-                                    </tr>
+                                    <tr><th className="p-2 text-left">Date</th><th className="p-2 text-right">Qty</th><th className="p-2 text-left">Remarks</th></tr>
                                 </thead>
                                 <tbody>
                                     {detailView.inwards.map(i => (
                                         <tr key={i.id} className="border-b">
                                             <td className="p-2">{new Date(i.date).toLocaleDateString()}</td>
                                             <td className="p-2 text-right">{i.qty}</td>
-                                            <td className="p-2 text-right">{i.comboQty || 0}</td>
-                                            <td className="p-2 text-xs text-slate-600">{i.enteredBy || '-'}</td>
-                                            <td className="p-2 text-xs text-slate-600">{i.checkedBy || '-'}</td>
                                             <td className="p-2 text-slate-500 text-xs">{i.remarks}</td>
                                         </tr>
                                     ))}
@@ -251,80 +179,62 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
         </div>
       )}
 
-      {/* Sync Header */}
       <Card className="bg-blue-50 border-blue-100">
         <div className="flex justify-between items-center mb-2">
-          <div><h3 className="font-bold text-blue-900">Google Sync</h3></div>
-          <Button onClick={handleSync} disabled={isSyncing} className="w-auto px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700">
-             {isSyncing ? '...' : 'Sync & Download'}
+          <h3 className="font-bold text-blue-900">Cloud Sync</h3>
+          <Button onClick={handleSync} disabled={isSyncing} className="w-auto px-4 py-2 text-sm bg-blue-600">
+             {isSyncing ? '...' : 'Sync Data'}
           </Button>
         </div>
-        {syncStatus && <p className="text-xs font-mono text-blue-800 break-all bg-white p-2 rounded">{syncStatus}</p>}
+        {syncStatus && <p className="text-[10px] font-mono text-blue-800 break-all bg-white p-1 rounded">{syncStatus}</p>}
       </Card>
 
-      {/* Filters */}
       <Card className="p-3">
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-                <div className="relative">
-                    <Search className="absolute left-3 top-3 text-slate-400" size={18} />
-                    <input className="w-full pl-10 p-2 border rounded-lg bg-slate-50" placeholder="Search Vendor, Challan..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                </div>
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="relative">
+                <Search className="absolute left-3 top-3 text-slate-400" size={18} />
+                <input className="w-full pl-10 p-2 border rounded-lg bg-slate-50" placeholder="Search Vendor Name, Challan..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             <div className="flex gap-2">
                 <input type="date" className="p-2 border rounded-lg flex-1" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-                <span className="self-center">-</span>
                 <input type="date" className="p-2 border rounded-lg flex-1" value={dateTo} onChange={e => setDateTo(e.target.value)} />
             </div>
-            <div className="flex flex-col md:flex-row gap-2">
-                <div className="flex gap-2 flex-1">
-                    <select className="p-2 border rounded-lg flex-1" value={sortBy} onChange={(e:any) => setSortBy(e.target.value)}>
-                        <option value="date">Sort by Date</option>
-                        <option value="qty">Sort by Qty</option>
-                        <option value="overdue">Sort by Overdue</option>
-                    </select>
-                    <button className="p-2 border rounded-lg bg-slate-50" onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}>
-                        {sortOrder === 'asc' ? <ChevronUp /> : <ChevronDown />}
-                    </button>
-                </div>
-                <label className="flex items-center space-x-2 text-sm text-slate-600 font-bold cursor-pointer p-2 border rounded-lg bg-slate-50 whitespace-nowrap justify-center md:justify-start hover:bg-slate-100 transition-colors">
-                    <input type="checkbox" checked={hideCompleted} onChange={e => setHideCompleted(e.target.checked)} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" />
-                    <span>Hide Completed</span>
+            <div className="flex gap-2 flex-1">
+                <select className="p-2 border rounded-lg flex-1" value={sortBy} onChange={(e:any) => setSortBy(e.target.value)}>
+                    <option value="date">Sort by Date</option>
+                    <option value="qty">Qty</option>
+                    <option value="overdue">Overdue</option>
+                </select>
+                <button className="p-2 border rounded-lg bg-slate-50" onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}>
+                    {sortOrder === 'asc' ? <ChevronUp /> : <ChevronDown />}
+                </button>
+                <label className="flex items-center space-x-2 text-xs text-slate-600 font-bold cursor-pointer p-2 border rounded-lg bg-slate-50 hover:bg-slate-100">
+                    <input type="checkbox" checked={hideCompleted} onChange={e => setHideCompleted(e.target.checked)} className="w-4 h-4 rounded text-blue-600" />
+                    <span>Active Only</span>
                 </label>
-            </div>
-            <div className="md:col-span-2">
-                <Button variant="secondary" onClick={handleDownloadCSV} className="text-sm py-2">Download Report CSV</Button>
             </div>
          </div>
       </Card>
 
-      {/* List */}
       <div className="space-y-3">
         {reportData.map((r) => {
             const days = Math.floor((new Date().getTime() - new Date(r.date).getTime()) / (1000 * 60 * 60 * 24));
             const isCompleted = r.status === 'COMPLETED' || r.pending <= 0;
-            
             return (
                 <div key={r.id} onClick={() => setDetailView({ outward: r, inwards: r.inwards })} className={`bg-white rounded-xl shadow-sm border border-slate-200 p-4 cursor-pointer hover:shadow-md transition-shadow relative overflow-hidden`}>
                     {isCompleted && <div className="absolute right-0 top-0 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl-lg">COMPLETED</div>}
                     <div className="flex justify-between items-start mb-2">
                         <div>
-                            <div className="font-bold text-lg">{r.vendorName}</div>
+                            <div className="font-bold text-lg leading-tight">{r.vendorName}</div>
                             <div className="text-xs text-slate-500 font-mono">#{r.challanNo} • {new Date(r.date).toLocaleDateString()}</div>
                         </div>
-                        <div className="flex flex-col items-end">
-                             <button onClick={(e) => { e.stopPropagation(); setPrintEntry(r); setTimeout(()=>window.print(),100); }} className="text-blue-500 hover:bg-blue-50 p-2 rounded-full mb-1"><Printer size={16}/></button>
-                             {r.lastRecvDate && <div className="text-[10px] text-slate-400">Last Recv: {new Date(r.lastRecvDate).toLocaleDateString()}</div>}
-                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); setPrintEntry(r); setTimeout(()=>window.print(),100); }} className="text-blue-500 p-2"><Printer size={18}/></button>
                     </div>
-                    
                     <div className="flex justify-between items-end border-t pt-2 mt-2">
                         <div>
-                            <div className="text-xs font-bold text-slate-400 uppercase">{r.itemSku}</div>
-                             <div className="text-xs font-bold text-slate-500 mt-1">{r.workName}</div>
-                            <div className="text-sm mt-1">
-                                <span className="font-bold">{r.inQty}</span> / {r.qty} Received
-                                {r.comboQty ? <span className="text-xs text-slate-400 block">Combo: {r.inComboQty}/{r.comboQty}</span> : null}
+                            <div className="text-xs font-black text-slate-400 uppercase">{r.itemSku}</div>
+                            <div className="text-sm font-bold mt-1 text-slate-700">
+                                {r.inQty} / {r.qty} Recv.
                             </div>
                         </div>
                         {!isCompleted ? (
@@ -333,13 +243,13 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                                 <div className="text-[10px] font-bold text-orange-600 uppercase">{days} Days Open</div>
                              </div>
                         ) : (
-                             <div className="text-green-600 font-bold flex items-center"><CheckCircle size={16} className="mr-1"/> Closed</div>
+                             <div className="text-green-600 font-bold flex items-center text-sm"><CheckCircle size={14} className="mr-1"/> Closed</div>
                         )}
                     </div>
                 </div>
             );
         })}
-        {reportData.length === 0 && <div className="text-center text-slate-400 py-10">No records match your filters.</div>}
+        {reportData.length === 0 && <div className="text-center text-slate-400 py-10">No records found.</div>}
       </div>
     </div>
   );

@@ -21,80 +21,86 @@ export const initGapi = async (apiKey: string) => {
   });
 };
 
-const uploadImage = async (base64String: string, fileName: string): Promise<string | null> => {
+const getOrCreateFolder = async (folderName: string): Promise<string | null> => {
+  const gapi = (window as any).gapi;
+  const accessToken = gapi.client.getToken()?.access_token;
+  if (!accessToken) return null;
+
+  try {
+    const searchResponse = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=name='${folderName}' and '${DRIVE_CONFIG.folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    const searchData = await searchResponse.json();
+    if (searchData.files && searchData.files.length > 0) return searchData.files[0].id;
+
+    const createResponse = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: folderName, mimeType: 'application/vnd.google-apps.folder', parents: [DRIVE_CONFIG.folderId] })
+    });
+    const createData = await createResponse.json();
+    return createData.id || null;
+  } catch (e) { return DRIVE_CONFIG.folderId; }
+};
+
+const uploadImage = async (base64String: string, fileName: string, targetFolder: 'outward' | 'inward'): Promise<string | null> => {
   try {
     if (!base64String || !base64String.includes(',')) return null;
-
     const gapi = (window as any).gapi;
     const mimeMatch = base64String.match(/data:(.*);base64/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-
     const byteString = atob(base64String.split(',')[1]);
     const ab = new ArrayBuffer(byteString.length);
     const ia = new Uint8Array(ab);
     for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
-    
     const blob = new Blob([ab], { type: mimeType });
-    const metadata = { name: fileName, parents: [DRIVE_CONFIG.folderId] };
-    
+    const folderId = await getOrCreateFolder(targetFolder === 'outward' ? 'outward images' : 'inward images');
+    const metadata = { name: fileName, parents: folderId ? [folderId] : [DRIVE_CONFIG.folderId] };
     const accessToken = gapi.client.getToken()?.access_token;
-    if (!accessToken) throw new Error("No Access Token found. Please Sync again.");
-
+    if (!accessToken) throw new Error("No Access Token");
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     form.append('file', blob);
-
     const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
       method: 'POST',
       headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
       body: form
     });
-    
-    if (!response.ok) throw new Error(`Upload Failed: ${response.statusText}`);
     const data = await response.json();
     return data.webViewLink || null;
-  } catch (error) { console.error("Drive Upload Error", error); return null; }
+  } catch (error) { return null; }
 };
 
 const parseDate = (value: any): string => {
   try {
     if (!value) return new Date().toISOString();
     let d = new Date(value);
-    if (isNaN(d.getTime())) {
-      const match = String(value).trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
-      if (match) d = new Date(`${match[3]}-${match[2]}-${match[1]}`);
-    }
-    if (isNaN(d.getTime())) return new Date().toISOString();
-    const year = d.getFullYear();
-    if (year < 1900 || year > 2100) return new Date().toISOString();
-    return d.toISOString();
+    return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
   } catch (e) { return new Date().toISOString(); }
 };
 
-// Unique Signature for Inward Entries to prevent duplicates
-// Format: Date|Vendor|OutwardChallan|SKU|Qty
 const getInwardSignature = (date: string, vendor: string, outChallan: string, sku: string, qty: number) => {
     return `${date.split('T')[0]}|${vendor.trim().toLowerCase()}|${outChallan.trim()}|${sku.trim().toLowerCase()}|${qty}`;
 };
 
 export const syncDataToSheets = async (state: AppState, onUpdateState: (newState: AppState) => void) => {
   const gapi = (window as any).gapi;
-  if (!gapi.client.getToken()) return { success: false, message: "Authorization lost. Click Sync to login again." };
+  if (!gapi.client.getToken()) return { success: false, message: "Authorization lost." };
 
   try {
-    // 1. DOWNLOAD EXISTING DATA FIRST (Check for duplicates)
+    const timestamp = new Date().toLocaleString();
     const ranges = [
       `${SHEETS_CONFIG.vendorSheetName}!A:B`,
       `${SHEETS_CONFIG.itemSheetName}!A:B`,
       `${SHEETS_CONFIG.workSheetName}!A:A`,
-      `${SHEETS_CONFIG.outwardSheetName}!A:O`,
-      `${SHEETS_CONFIG.inwardSheetName}!A:M`,
+      `${SHEETS_CONFIG.outwardSheetName}!A:P`, 
+      `${SHEETS_CONFIG.inwardSheetName}!A:N`, 
       `${SHEETS_CONFIG.userSheetName}!A:A`
     ];
     const resp = await gapi.client.sheets.spreadsheets.values.batchGet({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, ranges });
     const valueRanges = resp.result.valueRanges;
 
-    // Parse Existing Data with Explicit Types
     const existingVendors: Vendor[] = (valueRanges[0].values || []).slice(1).map((r:any) => ({ id: uuidv4(), name: r[0], code: r[1], synced: true }));
     const existingItems: Item[] = (valueRanges[1].values || []).slice(1).map((r:any) => ({ id: uuidv4(), sku: r[0], description: r[1] || '', synced: true }));
     const existingWorks: WorkType[] = (valueRanges[2].values || []).slice(1).map((r:any) => ({ id: uuidv4(), name: r[0], synced: true }));
@@ -103,279 +109,98 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const existingOutwardRows = (valueRanges[3].values || []).slice(1);
     const existingInwardRows = (valueRanges[4].values || []).slice(1);
 
-    // Build Duplicate Check Sets
-    const seenOutwardChallans = new Set(existingOutwardRows.map((r:any) => r[2]?.trim()));
+    const seenOutwardChallans = new Set(existingOutwardRows.map((r:any) => r[2]?.trim())); // Challan index 2
     const seenInwardSignatures = new Set(existingInwardRows.map((r:any) => 
         getInwardSignature(parseDate(r[0]), r[1]||'', r[2]||'', r[3]||'', parseFloat(r[4]||0))
     ));
 
-    // 2. IDENTIFY TRULY NEW ITEMS (Filter out ones that exist in sheet)
-    // Masters - Explicitly type callbacks to avoid implicit 'any' errors
-    const unsyncedVendors = state.vendors.filter(e => !e.synced && !existingVendors.some((ev: Vendor) => ev.code === e.code));
-    const unsyncedItems = state.items.filter(e => !e.synced && !existingItems.some((ei: Item) => ei.sku === e.sku));
-    const unsyncedWorks = state.workTypes.filter(e => !e.synced && !existingWorks.some((ew: WorkType) => ew.name === e.name));
-    const unsyncedUsers = state.users.filter(e => !e.synced && !existingUsers.some((eu: User) => eu.name === e.name));
+    // NEW DATA SELECTION
+    const unsyncedVendors = state.vendors.filter(e => !e.synced && !existingVendors.some(ev => ev.code === e.code));
+    const unsyncedItems = state.items.filter(e => !e.synced && !existingItems.some(ei => ei.sku === e.sku));
+    const unsyncedWorks = state.workTypes.filter(e => !e.synced && !existingWorks.some(ew => ew.name === e.name));
+    const unsyncedUsers = state.users.filter(e => !e.synced && !existingUsers.some(eu => eu.name === e.name));
     
-    // Entries
     const validOutwardToUpload = state.outwardEntries.filter(e => !e.synced && !seenOutwardChallans.has(e.challanNo.trim()));
     const validInwardToUpload = state.inwardEntries.filter(e => !e.synced).filter(e => {
          const vendorName = state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown';
          const outChallan = state.outwardEntries.find(o => o.id === e.outwardChallanId)?.challanNo || '---';
          const sku = state.items.find(i => i.id === e.skuId)?.sku || 'Unknown';
-         const sig = getInwardSignature(e.date, vendorName, outChallan, sku, e.qty);
-         return !seenInwardSignatures.has(sig);
-    });
-    
-    // 2.5 SPECIAL HANDLE: Outward Status Updates (Short Close)
-    // Identify entries that exist in sheets BUT have different status locally
-    const statusUpdates = state.outwardEntries.filter(e => !e.synced && seenOutwardChallans.has(e.challanNo.trim()) && e.status === 'COMPLETED');
-    if (statusUpdates.length > 0) {
-        // We need to update the status in Google Sheets.
-        // Since we can't easily find the ROW number efficiently without iterating everything,
-        // and we have 'existingOutwardRows' (without header), row index in sheet = index + 2 (1-based + 1 header)
-        const updateRequests: any[] = [];
-        
-        statusUpdates.forEach(update => {
-            const rowIndex = existingOutwardRows.findIndex((r: any) => r[2]?.trim() === update.challanNo.trim());
-            if (rowIndex !== -1) {
-                // Row found at rowIndex (0-based in array). In Sheet it is rowIndex + 2.
-                // Status is Column O (Index 14)
-                updateRequests.push({
-                    range: `${SHEETS_CONFIG.outwardSheetName}!O${rowIndex + 2}`,
-                    values: [['COMPLETED']]
-                });
-            }
-        });
-
-        if (updateRequests.length > 0) {
-             const data = updateRequests.map(req => ({ range: req.range, values: req.values }));
-             await gapi.client.sheets.spreadsheets.values.batchUpdate({
-                 spreadsheetId: SHEETS_CONFIG.spreadsheetId,
-                 resource: { valueInputOption: "USER_ENTERED", data: data }
-             });
-        }
-    }
-
-
-    // 3. UPLOAD NEW DATA
-    // Masters
-    if (unsyncedVendors.length) await gapi.client.sheets.spreadsheets.values.append({
-      spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.vendorSheetName}!A:B`,
-      valueInputOption: "USER_ENTERED", resource: { values: unsyncedVendors.map(v => [v.name, v.code]) }
-    });
-    if (unsyncedItems.length) await gapi.client.sheets.spreadsheets.values.append({
-      spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.itemSheetName}!A:B`,
-      valueInputOption: "USER_ENTERED", resource: { values: unsyncedItems.map(i => [i.sku, i.description]) }
-    });
-    if (unsyncedWorks.length) await gapi.client.sheets.spreadsheets.values.append({
-      spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.workSheetName}!A:A`,
-      valueInputOption: "USER_ENTERED", resource: { values: unsyncedWorks.map(w => [w.name]) }
-    });
-    if (unsyncedUsers.length) await gapi.client.sheets.spreadsheets.values.append({
-      spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.userSheetName}!A:A`,
-      valueInputOption: "USER_ENTERED", resource: { values: unsyncedUsers.map(u => [u.name]) }
+         return !seenInwardSignatures.has(getInwardSignature(e.date, vendorName, outChallan, sku, e.qty));
     });
 
-    // Upload Outward
+    // APPEND OPERATIONS
+    if (unsyncedVendors.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.vendorSheetName}!A:B`, valueInputOption: "USER_ENTERED", resource: { values: unsyncedVendors.map(v => [v.name, v.code]) } });
+    if (unsyncedItems.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.itemSheetName}!A:B`, valueInputOption: "USER_ENTERED", resource: { values: unsyncedItems.map(i => [i.sku, i.description]) } });
+    if (unsyncedWorks.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.workSheetName}!A:A`, valueInputOption: "USER_ENTERED", resource: { values: unsyncedWorks.map(w => [w.name]) } });
+    if (unsyncedUsers.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.userSheetName}!A:A`, valueInputOption: "USER_ENTERED", resource: { values: unsyncedUsers.map(u => [u.name]) } });
+
     const newOutwardRows: any[] = [];
     for (const e of validOutwardToUpload) {
-      let photoUrl = e.photoUrl || '';
-      if (e.photo && !photoUrl) {
-        const url = await uploadImage(e.photo, `OUT_${e.challanNo}_${e.date.split('T')[0]}.jpg`);
-        if (url) photoUrl = url;
-      }
-      const vendor = state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown';
-      const item = state.items.find(i => i.id === e.skuId)?.sku || 'Unknown';
-      const work = state.workTypes.find(w => w.id === e.workId)?.name || '';
-
+      let pUrl = e.photoUrl || (e.photo ? await uploadImage(e.photo, `OUT_${e.challanNo}.jpg`, 'outward') : '');
       newOutwardRows.push([
-        e.date.split('T')[0], vendor, e.challanNo, item, e.qty, e.comboQty || '', 
-        e.totalWeight, e.pendalWeight, e.materialWeight, 
-        e.checkedBy || '', e.enteredBy || '', photoUrl, work, e.remarks || '',
-        e.status || 'OPEN' 
+        e.date.split('T')[0], state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown',
+        e.challanNo, state.items.find(i => i.id === e.skuId)?.sku || 'Unknown', 
+        e.qty, e.comboQty || '', e.totalWeight, e.pendalWeight, e.materialWeight, 
+        e.checkedBy || '', e.enteredBy || '', pUrl, 
+        state.workTypes.find(w => w.id === e.workId)?.name || '', 
+        e.remarks || '', 'OPEN', timestamp
       ]);
     }
-    if (newOutwardRows.length) await gapi.client.sheets.spreadsheets.values.append({
-        spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.outwardSheetName}!A:O`,
-        valueInputOption: "USER_ENTERED", resource: { values: newOutwardRows }
-    });
+    if (newOutwardRows.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.outwardSheetName}!A:P`, valueInputOption: "USER_ENTERED", resource: { values: newOutwardRows } });
 
-    // Upload Inward
     const newInwardRows: any[] = [];
     for (const e of validInwardToUpload) {
-      let photoUrl = e.photoUrl || '';
-      if (e.photo && !photoUrl) {
-        const outChallan = state.outwardEntries.find(o => o.id === e.outwardChallanId)?.challanNo || 'UNK';
-        const url = await uploadImage(e.photo, `IN_${outChallan}_${e.date.split('T')[0]}.jpg`);
-        if (url) photoUrl = url;
-      }
       const out = state.outwardEntries.find(o => o.id === e.outwardChallanId);
-      const item = state.items.find(i => i.id === e.skuId)?.sku || 'Unknown';
-      const vendor = state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown';
-      
+      let pUrl = e.photoUrl || (e.photo ? await uploadImage(e.photo, `IN_${out?.challanNo || 'UNK'}.jpg`, 'inward') : '');
       newInwardRows.push([
-        e.date.split('T')[0], vendor, out ? out.challanNo : '---', item, e.qty, e.comboQty || '',
-        e.totalWeight, e.pendalWeight, e.materialWeight,
-        e.checkedBy || '', e.enteredBy || '', photoUrl, e.remarks || ''
+        e.date.split('T')[0], state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown',
+        out ? out.challanNo : '---', state.items.find(i => i.id === e.skuId)?.sku || 'Unknown', 
+        e.qty, e.comboQty || '', e.totalWeight, e.pendalWeight, e.materialWeight,
+        e.checkedBy || '', e.enteredBy || '', pUrl, e.remarks || '', timestamp
       ]);
     }
-    if (newInwardRows.length) await gapi.client.sheets.spreadsheets.values.append({
-        spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.inwardSheetName}!A:M`,
-        valueInputOption: "USER_ENTERED", resource: { values: newInwardRows }
-    });
+    if (newInwardRows.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.inwardSheetName}!A:N`, valueInputOption: "USER_ENTERED", resource: { values: newInwardRows } });
 
-    // 4. CONSTRUCT FINAL STATE (Merge Existing + Just Uploaded)
+    // UPDATE RECONCILIATION SUMMARY (OVERWRITE)
+    const allVendors = [...existingVendors, ...unsyncedVendors.map(v => ({...v, synced: true}))];
+    const allItems = [...existingItems, ...unsyncedItems.map(i => ({...i, synced: true}))];
+    const allWorks = [...existingWorks, ...unsyncedWorks.map(w => ({...w, synced: true}))];
+    const finalOutward: OutwardEntry[] = [...existingOutwardRows, ...newOutwardRows].map((r:any) => ({
+      id: uuidv4(), date: parseDate(r[0]), vendorId: allVendors.find(v => v.name === r[1])?.id || '',
+      challanNo: r[2], skuId: allItems.find(i => i.sku === r[3])?.id || '',
+      qty: parseFloat(r[4] || 0), comboQty: parseFloat(r[5] || 0),
+      totalWeight: parseFloat(r[6] || 0), pendalWeight: parseFloat(r[7] || 0), materialWeight: parseFloat(r[8] || 0),
+      checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], workId: allWorks.find(w => w.name === r[12])?.id || '',
+      remarks: r[13], status: r[14] as 'OPEN' | 'COMPLETED', synced: true
+    }));
+    const finalInward: InwardEntry[] = [...existingInwardRows, ...newInwardRows].map((r:any) => ({
+      id: uuidv4(), date: parseDate(r[0]), vendorId: allVendors.find(v => v.name === r[1])?.id || '',
+      outwardChallanId: finalOutward.find(o => o.challanNo === r[2])?.id || '',
+      skuId: allItems.find(i => i.sku === r[3])?.id || '',
+      qty: parseFloat(r[4] || 0), comboQty: parseFloat(r[5] || 0),
+      totalWeight: parseFloat(r[6] || 0), pendalWeight: parseFloat(r[7] || 0), materialWeight: parseFloat(r[8] || 0),
+      checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], remarks: r[12], synced: true
+    }));
+
+    const reconRows = finalOutward.map(o => {
+        const ins = finalInward.filter(i => i.outwardChallanId === o.id);
+        const inQty = ins.reduce((s, i) => s + i.qty, 0);
+        const pending = o.status === 'COMPLETED' ? 0 : Math.max(0, o.qty - inQty);
+        return [
+            o.challanNo, allVendors.find(v => v.id === o.vendorId)?.name || '',
+            allItems.find(i => i.id === o.skuId)?.sku || '',
+            o.qty, inQty, pending, o.status || 'OPEN', timestamp
+        ];
+    });
     
-    // Masters
-    const allVendors = [...existingVendors, ...unsyncedVendors.map(v => ({...v, synced: true, id: uuidv4()}))];
-    const allItems = [...existingItems, ...unsyncedItems.map(v => ({...v, synced: true, id: uuidv4()}))];
-    const allWorks = [...existingWorks, ...unsyncedWorks.map(v => ({...v, synced: true, id: uuidv4()}))];
-    const allUsers = [...existingUsers, ...unsyncedUsers.map(v => ({...v, synced: true, id: uuidv4()}))];
-
-    // Combine Entries (Raw Arrays)
-    const allOutwardRows = [...existingOutwardRows, ...newOutwardRows];
-    // IMPORTANT: We must also reflect the status updates we just pushed in 'allOutwardRows' 
-    // because we don't redownload the sheet.
-    statusUpdates.forEach(update => {
-       const row = allOutwardRows.find(r => r[2] === update.challanNo);
-       if (row) row[14] = 'COMPLETED';
-    });
-
-    const allInwardRows = [...existingInwardRows, ...newInwardRows];
-
-    // Helper finders
-    const findId = (list: any[], name: string) => list.find((x: any) => x.name?.trim().toLowerCase() === name?.trim().toLowerCase())?.id || '';
-    const findItemId = (list: any[], sku: string) => list.find((x: any) => x.sku?.trim().toLowerCase() === sku?.trim().toLowerCase())?.id || '';
-
-    // Map Final Outward
-    const seenChallansFinal = new Set<string>();
-    const finalOutward: OutwardEntry[] = [];
-    
-    allOutwardRows.forEach((r:any) => {
-       const challanNo = r[2];
-       if (challanNo && !seenChallansFinal.has(challanNo)) {
-           seenChallansFinal.add(challanNo);
-           finalOutward.push({
-              id: uuidv4(),
-              date: parseDate(r[0]),
-              vendorId: findId(allVendors, r[1]),
-              challanNo: challanNo,
-              skuId: findItemId(allItems, r[3]),
-              qty: parseFloat(r[4] || 0),
-              comboQty: parseFloat(r[5] || 0),
-              totalWeight: parseFloat(r[6] || 0),
-              pendalWeight: parseFloat(r[7] || 0),
-              materialWeight: parseFloat(r[8] || 0),
-              checkedBy: r[9] || '',
-              enteredBy: r[10] || '',
-              photoUrl: r[11] || '',
-              workId: findId(allWorks, r[12]),
-              remarks: r[13] || '',
-              status: (r[14] as 'OPEN' | 'COMPLETED') || 'OPEN',
-              synced: true
-           });
-       }
-    });
-
-    // Map Final Inward
-    const finalInward: InwardEntry[] = allInwardRows.map((r:any) => {
-      const outChallan = finalOutward.find((o: any) => o.challanNo === r[2]);
-      return {
-        id: uuidv4(),
-        date: parseDate(r[0]),
-        vendorId: findId(allVendors, r[1]),
-        outwardChallanId: outChallan?.id || '',
-        skuId: findItemId(allItems, r[3]),
-        qty: parseFloat(r[4] || 0),
-        comboQty: parseFloat(r[5] || 0),
-        totalWeight: parseFloat(r[6] || 0),
-        pendalWeight: parseFloat(r[7] || 0),
-        materialWeight: parseFloat(r[8] || 0),
-        checkedBy: r[9] || '',
-        enteredBy: r[10] || '',
-        photoUrl: r[11] || '',
-        remarks: r[12] || '',
-        synced: true
-      };
-    });
-
-    // Update App State
-    onUpdateState({
-      vendors: allVendors,
-      items: allItems,
-      workTypes: allWorks,
-      users: allUsers,
-      outwardEntries: finalOutward,
-      inwardEntries: finalInward
-    });
-
-    // 5. UPDATE RECONCILIATION REPORT
-    // Use the guaranteed complete data (finalOutward/finalInward)
-    const reportRows = finalOutward.map((out: OutwardEntry) => {
-      const inwards = finalInward.filter((i: InwardEntry) => i.outwardChallanId === out.id);
-      const inQty = inwards.reduce((sum: number, i: InwardEntry) => sum + i.qty, 0);
-      const inCombo = inwards.reduce((sum: number, i: InwardEntry) => sum + (i.comboQty || 0), 0);
-      const lastRecv = inwards.length ? inwards.map((i: InwardEntry) => i.date).sort().pop() : null;
-      
-      const shortQty = out.qty - inQty;
-      const shortCombo = (out.comboQty || 0) - inCombo;
-
-      let status = 'Pending';
-      if (out.status === 'COMPLETED') {
-          status = shortQty > 0 ? 'Short Qty Completed' : 'Completed';
-      } else if (shortQty <= 0) {
-          status = 'Completed';
-      }
-
-      const inwardCheckedBy = Array.from(new Set(inwards.map((i: InwardEntry) => i.checkedBy).filter(Boolean))).join(', ');
-      const inwardEnteredBy = Array.from(new Set(inwards.map((i: InwardEntry) => i.enteredBy).filter(Boolean))).join(', ');
-      const inwardRemarks = Array.from(new Set(inwards.map((i: InwardEntry) => i.remarks).filter(Boolean))).join(', ');
-      
-      const workName = allWorks.find((w: WorkType) => w.id === out.workId)?.name || '';
-
-      return [
-          status, // A
-          allVendors.find((v: Vendor) => v.id === out.vendorId)?.name || '', // B
-          out.date.split('T')[0], // C
-          lastRecv ? parseDate(lastRecv).split('T')[0] : '---', // D
-          out.challanNo, // E
-          workName, // F (NEW WORK DONE COLUMN)
-          allItems.find((i: Item) => i.id === out.skuId)?.sku || '', // G (Shifted)
-          out.qty, // H
-          inQty, // I
-          shortQty, // J
-          out.comboQty || 0, // K
-          inCombo, // L
-          shortCombo, // M
-          inwardEnteredBy, // N
-          inwardCheckedBy, // O
-          inwardRemarks, // P
-          out.checkedBy || '', // Q
-          out.remarks || '' // R
-      ];
-    });
-
-    // Clear and Rewrite Report
-    await gapi.client.sheets.spreadsheets.values.clear({
-        spreadsheetId: SHEETS_CONFIG.spreadsheetId,
-        range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:R`
-    });
-
-    if (reportRows.length > 0) {
+    if (reconRows.length) {
         await gapi.client.sheets.spreadsheets.values.update({
-            spreadsheetId: SHEETS_CONFIG.spreadsheetId,
-            range: `${SHEETS_CONFIG.reconciliationSheetName}!A2`,
-            valueInputOption: "USER_ENTERED",
-            resource: { values: reportRows }
+            spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:H${reconRows.length + 1}`,
+            valueInputOption: "USER_ENTERED", resource: { values: reconRows }
         });
     }
 
-    return { success: true, message: `Synced. Uploaded: ${newOutwardRows.length} Out, ${newInwardRows.length} In. Status Updates: ${statusUpdates.length}` };
-  } catch (error: any) {
-    console.error("Sync Error", error);
-    if (error.status === 400 && error.result?.error?.message?.includes("origin")) {
-        return { success: false, message: "ORIGIN MISMATCH: Add this URL to Google Cloud Console > Authorized Origins" };
-    }
-    return { success: false, message: error.result?.error?.message || error.message || "Sync failed" };
-  }
+    onUpdateState({ vendors: allVendors, items: allItems, workTypes: allWorks, users: [...existingUsers, ...unsyncedUsers.map(u => ({...u, synced: true}))], outwardEntries: finalOutward, inwardEntries: finalInward });
+    return { success: true, message: `Last Sync: ${timestamp}` };
+  } catch (error: any) { return { success: false, message: error.message || "Sync failed" }; }
 };
