@@ -5,6 +5,17 @@ import { syncDataToSheets, initGapi } from '../services/sheets';
 import { ChevronDown, ChevronUp, Trash2, Printer, CheckCircle, Search } from 'lucide-react';
 import PrintChallan from '../components/PrintChallan';
 
+interface ReportRow extends OutwardEntry {
+  vendorName: string;
+  vendorCode: string;
+  itemSku: string;
+  workName: string;
+  inQty: number;
+  pending: number;
+  lastRecvDate: string | null;
+  inwards: InwardEntry[];
+}
+
 interface ReportProps {
   state: AppState;
   markSynced: (newState: AppState) => void;
@@ -15,7 +26,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
   const [syncStatus, setSyncStatus] = useState<string>('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [printEntry, setPrintEntry] = useState<OutwardEntry | null>(null);
-  const [detailView, setDetailView] = useState<{ outward: OutwardEntry, inwards: InwardEntry[] } | null>(null);
+  const [detailView, setDetailView] = useState<ReportRow | null>(null);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -83,14 +94,14 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
   };
 
   const reportData = useMemo(() => {
-    let rows = state.outwardEntries.map(o => {
+    let rows: ReportRow[] = state.outwardEntries.map(o => {
         const inwards = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
         const inQty = inwards.reduce((s, i) => s + i.qty, 0);
-        const lastRecvDate = inwards.length > 0 ? inwards.map(i => i.date).sort().pop() : null;
+        const lastRecvDate = inwards.length > 0 ? inwards.map(i => i.date).sort().pop() || null : null;
         const vendor = state.vendors.find(v => v.id === o.vendorId);
         const item = state.items.find(i => i.id === o.skuId);
         const work = state.workTypes.find(w => w.id === o.workId);
-        let pending = o.status === 'COMPLETED' ? 0 : o.qty - inQty;
+        let pending = o.status === 'COMPLETED' ? 0 : Math.max(0, o.qty - inQty);
 
         return {
             ...o,
@@ -138,15 +149,15 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
                 <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
-                    <h3 className="font-bold text-lg">Details: #{detailView.outward.challanNo}</h3>
+                    <h3 className="font-bold text-lg">Details: #{detailView.challanNo}</h3>
                     <button onClick={() => setDetailView(null)}><Trash2 className="rotate-45" /></button>
                 </div>
                 <div className="p-4 max-h-[60vh] overflow-y-auto">
                     <div className="mb-4 bg-blue-50 p-3 rounded-lg text-sm">
-                        <p><strong>Vendor:</strong> {detailView.outward.vendorName}</p>
-                        <p><strong>Sent Date:</strong> {new Date(detailView.outward.date).toLocaleDateString()}</p>
-                        <p><strong>Total Qty:</strong> {detailView.outward.qty}</p>
-                        <p><strong>Status:</strong> {detailView.outward.status || 'OPEN'}</p>
+                        <p><strong>Vendor:</strong> {detailView.vendorName}</p>
+                        <p><strong>Sent Date:</strong> {new Date(detailView.date).toLocaleDateString()}</p>
+                        <p><strong>Total Qty:</strong> {detailView.qty}</p>
+                        <p><strong>Status:</strong> {detailView.status || 'OPEN'}</p>
                     </div>
                     <h4 className="font-bold text-xs uppercase text-slate-500 mb-2">Inward History</h4>
                     {detailView.inwards.length === 0 ? <p className="text-slate-400 italic text-sm">No items received yet.</p> : (
@@ -169,8 +180,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                     )}
                 </div>
                 <div className="p-4 border-t bg-slate-50 flex justify-end">
-                    {detailView.outward.status !== 'COMPLETED' && (
-                        <Button variant="secondary" onClick={() => markJobComplete(detailView.outward.id)} className="bg-orange-100 text-orange-700 hover:bg-orange-200">
+                    {detailView.status !== 'COMPLETED' && (
+                        <Button variant="secondary" onClick={() => markJobComplete(detailView.id)} className="bg-orange-100 text-orange-700 hover:bg-orange-200">
                            <CheckCircle size={16} className="mr-2"/> Mark Complete (Short Close)
                         </Button>
                     )}
@@ -221,7 +232,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             const days = Math.floor((new Date().getTime() - new Date(r.date).getTime()) / (1000 * 60 * 60 * 24));
             const isCompleted = r.status === 'COMPLETED' || r.pending <= 0;
             return (
-                <div key={r.id} onClick={() => setDetailView({ outward: r, inwards: r.inwards })} className={`bg-white rounded-xl shadow-sm border border-slate-200 p-4 cursor-pointer hover:shadow-md transition-shadow relative overflow-hidden`}>
+                <div key={r.id} onClick={() => setDetailView(r)} className={`bg-white rounded-xl shadow-sm border border-slate-200 p-4 cursor-pointer hover:shadow-md transition-shadow relative overflow-hidden`}>
                     {isCompleted && <div className="absolute right-0 top-0 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl-lg">COMPLETED</div>}
                     <div className="flex justify-between items-start mb-2">
                         <div>
