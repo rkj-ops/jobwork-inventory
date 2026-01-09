@@ -35,6 +35,8 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
     const reportData = state.outwardEntries.map(o => {
         const inwards = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
         const inQty = inwards.reduce((s, i) => s + i.qty, 0);
+        const inCombo = inwards.reduce((s, i) => s + (i.comboQty || 0), 0);
+        
         const vendor = state.vendors.find(v => v.id === o.vendorId);
         const item = state.items.find(i => i.id === o.skuId);
         const work = state.workTypes.find(w => w.id === o.workId);
@@ -50,11 +52,16 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
             Work: work?.name || '',
             QtySent: o.qty,
             QtyRec: inQty,
-            ShortQty: o.status === 'COMPLETED' ? Math.max(0, o.qty - inQty) : (inQty >= o.qty ? 0 : o.qty - inQty),
+            ShortQty: o.status === 'COMPLETED' ? Math.max(0, o.qty - inQty) : 0,
+            ComboSent: o.comboQty || 0,
+            ComboRec: inCombo,
+            ShortCombo: o.status === 'COMPLETED' ? Math.max(0, (o.comboQty || 0) - inCombo) : 0,
+            EnteredBy: o.enteredBy || 'Admin',
+            CheckedBy: o.checkedBy || '---',
             Remarks: o.remarks || ''
         };
     });
-    exportToCSV(reportData, `Reconciliation_Full_Report_${new Date().toISOString().split('T')[0]}`);
+    exportToCSV(reportData, `Reconciliation_Report_${new Date().toISOString().split('T')[0]}`);
   };
 
   const saveConfig = () => {
@@ -151,9 +158,9 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
         <div className="px-4 space-y-4">
            <Card title="Download Reports">
               <Button onClick={handleDownloadReconReport} variant="primary" className="mb-2">
-                 <BarChart3 size={18} className="mr-2"/> Download Reconciliation Report
+                 <BarChart3 size={18} className="mr-2"/> Download Full Reconciliation CSV
               </Button>
-              <p className="text-[10px] text-slate-400 text-center italic">Calculates live status based on all Inward/Outward entries.</p>
+              <p className="text-[10px] text-slate-400 text-center italic">Includes Qty, Combo Qty, Short Detail & Audit Trail.</p>
            </Card>
 
            <Card title="Import Masters">

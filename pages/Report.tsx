@@ -2,7 +2,7 @@ import React, { useMemo, useState, useRef } from 'react';
 import { AppState, OutwardEntry, InwardEntry } from '../types';
 import { Card, Button } from '../components/ui';
 import { syncDataToSheets, initGapi } from '../services/sheets';
-import { ChevronDown, ChevronUp, Trash2, Printer, CheckCircle, Search } from 'lucide-react';
+import { ChevronDown, ChevronUp, Trash2, Printer, CheckCircle, Search, Info } from 'lucide-react';
 import PrintChallan from '../components/PrintChallan';
 
 interface ReportRow extends OutwardEntry {
@@ -11,6 +11,9 @@ interface ReportRow extends OutwardEntry {
   itemSku: string;
   workName: string;
   inQty: number;
+  inComboQty: number;
+  shortQty: number;
+  shortComboQty: number;
   pending: number;
   lastRecvDate: string | null;
   inwards: InwardEntry[];
@@ -97,11 +100,18 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
     let rows: ReportRow[] = state.outwardEntries.map(o => {
         const inwards = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
         const inQty = inwards.reduce((s, i) => s + i.qty, 0);
+        const inComboQty = inwards.reduce((s, i) => s + (i.comboQty || 0), 0);
+        
         const lastRecvDate = inwards.length > 0 ? inwards.map(i => i.date).sort().pop() || null : null;
         const vendor = state.vendors.find(v => v.id === o.vendorId);
         const item = state.items.find(i => i.id === o.skuId);
         const work = state.workTypes.find(w => w.id === o.workId);
-        let pending = o.status === 'COMPLETED' ? 0 : Math.max(0, o.qty - inQty);
+        
+        const isClosed = o.status === 'COMPLETED';
+        const pending = isClosed ? 0 : Math.max(0, o.qty - inQty);
+        
+        const shortQty = isClosed ? Math.max(0, o.qty - inQty) : 0;
+        const shortComboQty = isClosed ? Math.max(0, (o.comboQty || 0) - inComboQty) : 0;
 
         return {
             ...o,
@@ -110,6 +120,9 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             itemSku: item?.sku || 'UNK',
             workName: work?.name || '',
             inQty,
+            inComboQty,
+            shortQty,
+            shortComboQty,
             pending,
             lastRecvDate,
             inwards
@@ -153,25 +166,43 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                     <button onClick={() => setDetailView(null)}><Trash2 className="rotate-45" /></button>
                 </div>
                 <div className="p-4 max-h-[60vh] overflow-y-auto">
-                    <div className="mb-4 bg-blue-50 p-3 rounded-lg text-sm">
-                        <p><strong>Vendor:</strong> {detailView.vendorName}</p>
-                        <p><strong>Sent Date:</strong> {new Date(detailView.date).toLocaleDateString()}</p>
-                        <p><strong>Total Qty:</strong> {detailView.qty}</p>
-                        <p><strong>Status:</strong> {detailView.status || 'OPEN'}</p>
+                    <div className="mb-4 bg-blue-50 p-4 rounded-xl text-sm border border-blue-100 shadow-inner">
+                        <div className="grid grid-cols-2 gap-y-2">
+                          <p><strong>Vendor:</strong> {detailView.vendorName}</p>
+                          <p><strong>Work:</strong> {detailView.workName}</p>
+                          <p><strong>Sent Date:</strong> {new Date(detailView.date).toLocaleDateString()}</p>
+                          <p><strong>Status:</strong> <span className={`font-bold ${detailView.status === 'COMPLETED' ? 'text-green-600' : 'text-orange-600'}`}>{detailView.status || 'OPEN'}</span></p>
+                          <p><strong>Sent Qty:</strong> {detailView.qty} (Combo: {detailView.comboQty || 0})</p>
+                          <p><strong>Recv Qty:</strong> {detailView.inQty} (Combo: {detailView.inComboQty || 0})</p>
+                          <p><strong>Entered By:</strong> {detailView.enteredBy || 'Admin'}</p>
+                          <p><strong>Checked By:</strong> {detailView.checkedBy || '---'}</p>
+                        </div>
+                        {detailView.status === 'COMPLETED' && (detailView.shortQty > 0 || detailView.shortComboQty > 0) && (
+                          <div className="mt-2 pt-2 border-t border-blue-200 text-red-600 font-bold">
+                             <p>Short Qty: {detailView.shortQty}</p>
+                             <p>Short Combo Qty: {detailView.shortComboQty}</p>
+                          </div>
+                        )}
                     </div>
-                    <h4 className="font-bold text-xs uppercase text-slate-500 mb-2">Inward History</h4>
-                    {detailView.inwards.length === 0 ? <p className="text-slate-400 italic text-sm">No items received yet.</p> : (
-                        <div className="overflow-x-auto">
+                    <h4 className="font-bold text-xs uppercase text-slate-500 mb-2 px-1">Inward History</h4>
+                    {detailView.inwards.length === 0 ? <p className="text-slate-400 italic text-sm text-center py-4 bg-slate-50 rounded-lg">No items received yet.</p> : (
+                        <div className="overflow-x-auto rounded-lg border border-slate-100">
                             <table className="w-full text-sm">
                                 <thead className="bg-slate-100">
-                                    <tr><th className="p-2 text-left">Date</th><th className="p-2 text-right">Qty</th><th className="p-2 text-left">Remarks</th></tr>
+                                    <tr>
+                                      <th className="p-2 text-left">Date</th>
+                                      <th className="p-2 text-right">Qty</th>
+                                      <th className="p-2 text-right">Combo</th>
+                                      <th className="p-2 text-left">User</th>
+                                    </tr>
                                 </thead>
                                 <tbody>
                                     {detailView.inwards.map(i => (
-                                        <tr key={i.id} className="border-b">
+                                        <tr key={i.id} className="border-b last:border-0 hover:bg-slate-50">
                                             <td className="p-2">{new Date(i.date).toLocaleDateString()}</td>
-                                            <td className="p-2 text-right">{i.qty}</td>
-                                            <td className="p-2 text-slate-500 text-xs">{i.remarks}</td>
+                                            <td className="p-2 text-right font-bold">{i.qty}</td>
+                                            <td className="p-2 text-right">{i.comboQty || 0}</td>
+                                            <td className="p-2 text-slate-500 text-[10px]">{i.enteredBy}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -179,12 +210,13 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                         </div>
                     )}
                 </div>
-                <div className="p-4 border-t bg-slate-50 flex justify-end">
+                <div className="p-4 border-t bg-slate-50 flex justify-end gap-2">
                     {detailView.status !== 'COMPLETED' && (
-                        <Button variant="secondary" onClick={() => markJobComplete(detailView.id)} className="bg-orange-100 text-orange-700 hover:bg-orange-200">
-                           <CheckCircle size={16} className="mr-2"/> Mark Complete (Short Close)
+                        <Button variant="secondary" onClick={() => markJobComplete(detailView.id)} className="bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200">
+                           <CheckCircle size={16} className="mr-2"/> Short Close
                         </Button>
                     )}
+                    <Button onClick={() => setDetailView(null)} variant="outline" className="w-auto px-6">Close</Button>
                 </div>
             </div>
         </div>
@@ -194,34 +226,34 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
         <div className="flex justify-between items-center mb-2">
           <h3 className="font-bold text-blue-900">Cloud Sync</h3>
           <Button onClick={handleSync} disabled={isSyncing} className="w-auto px-4 py-2 text-sm bg-blue-600">
-             {isSyncing ? '...' : 'Sync Data'}
+             {isSyncing ? '...' : 'Sync Now'}
           </Button>
         </div>
-        {syncStatus && <p className="text-[10px] font-mono text-blue-800 break-all bg-white p-1 rounded">{syncStatus}</p>}
+        {syncStatus && <p className="text-[10px] font-mono text-blue-800 break-all bg-white/50 p-2 rounded border border-blue-100">{syncStatus}</p>}
       </Card>
 
       <Card className="p-3">
          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="relative">
                 <Search className="absolute left-3 top-3 text-slate-400" size={18} />
-                <input className="w-full pl-10 p-2 border rounded-lg bg-slate-50" placeholder="Search Vendor Name, Challan..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                <input className="w-full pl-10 p-2 border rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none" placeholder="Search Vendor Name, Challan..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             <div className="flex gap-2">
-                <input type="date" className="p-2 border rounded-lg flex-1" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-                <input type="date" className="p-2 border rounded-lg flex-1" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+                <input type="date" className="p-2 border rounded-lg flex-1 text-xs" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+                <input type="date" className="p-2 border rounded-lg flex-1 text-xs" value={dateTo} onChange={e => setDateTo(e.target.value)} />
             </div>
             <div className="flex gap-2 flex-1">
-                <select className="p-2 border rounded-lg flex-1" value={sortBy} onChange={(e:any) => setSortBy(e.target.value)}>
+                <select className="p-2 border rounded-lg flex-1 text-xs font-bold text-slate-600" value={sortBy} onChange={(e:any) => setSortBy(e.target.value)}>
                     <option value="date">Sort by Date</option>
                     <option value="qty">Qty</option>
                     <option value="overdue">Overdue</option>
                 </select>
                 <button className="p-2 border rounded-lg bg-slate-50" onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}>
-                    {sortOrder === 'asc' ? <ChevronUp /> : <ChevronDown />}
+                    {sortOrder === 'asc' ? <ChevronUp size={18}/> : <ChevronDown size={18}/>}
                 </button>
                 <label className="flex items-center space-x-2 text-xs text-slate-600 font-bold cursor-pointer p-2 border rounded-lg bg-slate-50 hover:bg-slate-100">
                     <input type="checkbox" checked={hideCompleted} onChange={e => setHideCompleted(e.target.checked)} className="w-4 h-4 rounded text-blue-600" />
-                    <span>Active Only</span>
+                    <span className="whitespace-nowrap">Active Only</span>
                 </label>
             </div>
          </div>
@@ -232,35 +264,50 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             const days = Math.floor((new Date().getTime() - new Date(r.date).getTime()) / (1000 * 60 * 60 * 24));
             const isCompleted = r.status === 'COMPLETED' || r.pending <= 0;
             return (
-                <div key={r.id} onClick={() => setDetailView(r)} className={`bg-white rounded-xl shadow-sm border border-slate-200 p-4 cursor-pointer hover:shadow-md transition-shadow relative overflow-hidden`}>
-                    {isCompleted && <div className="absolute right-0 top-0 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl-lg">COMPLETED</div>}
-                    <div className="flex justify-between items-start mb-2">
+                <div key={r.id} onClick={() => setDetailView(r)} className={`bg-white rounded-xl shadow-sm border ${isCompleted ? 'border-slate-100 opacity-80' : 'border-slate-200'} p-4 cursor-pointer hover:shadow-md transition-all relative overflow-hidden group`}>
+                    {isCompleted && (
+                       <div className={`absolute right-0 top-0 text-white text-[9px] font-black px-3 py-1 rounded-bl-lg uppercase tracking-wider ${r.shortQty > 0 ? 'bg-orange-500' : 'bg-green-600'}`}>
+                          {r.shortQty > 0 ? 'SHORT CLOSED' : 'COMPLETED'}
+                       </div>
+                    )}
+                    <div className="flex justify-between items-start mb-3">
                         <div>
-                            <div className="font-bold text-lg leading-tight">{r.vendorName}</div>
-                            <div className="text-xs text-slate-500 font-mono">#{r.challanNo} • {new Date(r.date).toLocaleDateString()}</div>
+                            <div className="font-black text-slate-800 text-lg leading-tight uppercase tracking-tight">{r.vendorName}</div>
+                            <div className="text-xs text-slate-400 font-mono mt-0.5">CH#{r.challanNo} • {new Date(r.date).toLocaleDateString()}</div>
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); setPrintEntry(r); setTimeout(()=>window.print(),100); }} className="text-blue-500 p-2"><Printer size={18}/></button>
+                        <div className="flex gap-1">
+                          <button onClick={(e) => { e.stopPropagation(); setPrintEntry(r); setTimeout(()=>window.print(),100); }} className="text-blue-500 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Printer size={18}/></button>
+                          <div className="text-slate-300 p-2 group-hover:text-blue-400 transition-colors"><Info size={18} /></div>
+                        </div>
                     </div>
-                    <div className="flex justify-between items-end border-t pt-2 mt-2">
-                        <div>
-                            <div className="text-xs font-black text-slate-400 uppercase">{r.itemSku}</div>
-                            <div className="text-sm font-bold mt-1 text-slate-700">
-                                {r.inQty} / {r.qty} Recv.
+                    <div className="flex justify-between items-end border-t pt-3 mt-3">
+                        <div className="space-y-1">
+                            <div className="text-[10px] font-black text-slate-400 uppercase bg-slate-100 px-1.5 py-0.5 rounded inline-block">{r.itemSku}</div>
+                            <div className="text-sm font-bold text-slate-700 block">
+                                {r.inQty} / {r.qty} <span className="text-slate-400 font-normal">Recv.</span>
                             </div>
+                            {r.comboQty > 0 && (
+                               <div className="text-[10px] text-slate-500 italic">
+                                  Combos: {r.inComboQty} / {r.comboQty}
+                               </div>
+                            )}
                         </div>
                         {!isCompleted ? (
                              <div className="text-right">
-                                <div className="text-xl font-black text-orange-500">{r.pending}</div>
-                                <div className="text-[10px] font-bold text-orange-600 uppercase">{days} Days Open</div>
+                                <div className="text-2xl font-black text-orange-500">{r.pending}</div>
+                                <div className="text-[10px] font-bold text-orange-600 uppercase tracking-tighter">{days} Days Pending</div>
                              </div>
                         ) : (
-                             <div className="text-green-600 font-bold flex items-center text-sm"><CheckCircle size={14} className="mr-1"/> Closed</div>
+                             <div className="text-right">
+                                {r.shortQty > 0 && <div className="text-orange-600 font-black text-xs">Short: {r.shortQty}</div>}
+                                <div className="text-green-600 font-black flex items-center text-xs justify-end mt-1"><CheckCircle size={14} className="mr-1"/> DONE</div>
+                             </div>
                         )}
                     </div>
                 </div>
             );
         })}
-        {reportData.length === 0 && <div className="text-center text-slate-400 py-10">No records found.</div>}
+        {reportData.length === 0 && <div className="text-center text-slate-400 py-12 bg-white rounded-2xl border border-dashed border-slate-200">No records found matching criteria.</div>}
       </div>
     </div>
   );

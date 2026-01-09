@@ -80,8 +80,10 @@ const parseDate = (value: any): string => {
   } catch (e) { return new Date().toISOString(); }
 };
 
-const getInwardSignature = (date: string, vendor: string, outChallan: string, sku: string, qty: number) => {
-    return `${date.split('T')[0]}|${vendor.trim().toLowerCase()}|${outChallan.trim()}|${sku.trim().toLowerCase()}|${qty}`;
+// Simplified signature for more robust duplicate detection
+const getInwardSignature = (dateStr: string, vendor: string, outChallan: string, qty: number) => {
+    const d = dateStr.split('T')[0];
+    return `${d}|${vendor.trim().toLowerCase()}|${outChallan.trim().toLowerCase()}|${qty}`;
 };
 
 export const syncDataToSheets = async (state: AppState, onUpdateState: (newState: AppState) => void) => {
@@ -109,9 +111,9 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const existingOutwardRows = (valueRanges[3].values || []).slice(1);
     const existingInwardRows = (valueRanges[4].values || []).slice(1);
 
-    const seenOutwardChallans = new Set(existingOutwardRows.map((r:any) => r[2]?.trim())); // Challan index 2
+    const seenOutwardChallans = new Set(existingOutwardRows.map((r:any) => r[2]?.trim())); 
     const seenInwardSignatures = new Set(existingInwardRows.map((r:any) => 
-        getInwardSignature(parseDate(r[0]), r[1]||'', r[2]||'', r[3]||'', parseFloat(r[4]||0))
+        getInwardSignature(r[0]||'', r[1]||'', r[2]||'', parseFloat(r[4]||0))
     ));
 
     // NEW DATA SELECTION
@@ -124,8 +126,8 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const validInwardToUpload = state.inwardEntries.filter(e => !e.synced).filter(e => {
          const vendorName = state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown';
          const outChallan = state.outwardEntries.find(o => o.id === e.outwardChallanId)?.challanNo || '---';
-         const sku = state.items.find(i => i.id === e.skuId)?.sku || 'Unknown';
-         return !seenInwardSignatures.has(getInwardSignature(e.date, vendorName, outChallan, sku, e.qty));
+         const sig = getInwardSignature(e.date, vendorName, outChallan, e.qty);
+         return !seenInwardSignatures.has(sig);
     });
 
     // APPEND OPERATIONS
@@ -161,10 +163,12 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     }
     if (newInwardRows.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.inwardSheetName}!A:N`, valueInputOption: "USER_ENTERED", resource: { values: newInwardRows } });
 
-    // UPDATE RECONCILIATION SUMMARY (OVERWRITE)
+    // REFRESH LOCAL STATE FROM CLOUD
     const allVendors = [...existingVendors, ...unsyncedVendors.map(v => ({...v, synced: true}))];
     const allItems = [...existingItems, ...unsyncedItems.map(i => ({...i, synced: true}))];
     const allWorks = [...existingWorks, ...unsyncedWorks.map(w => ({...w, synced: true}))];
+    const allUsers = [...existingUsers, ...unsyncedUsers.map(u => ({...u, synced: true}))];
+
     const finalOutward: OutwardEntry[] = [...existingOutwardRows, ...newOutwardRows].map((r:any) => ({
       id: uuidv4(), date: parseDate(r[0]), vendorId: allVendors.find(v => v.name === r[1])?.id || '',
       challanNo: r[2], skuId: allItems.find(i => i.sku === r[3])?.id || '',
@@ -173,6 +177,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], workId: allWorks.find(w => w.name === r[12])?.id || '',
       remarks: r[13], status: r[14] as 'OPEN' | 'COMPLETED', synced: true
     }));
+
     const finalInward: InwardEntry[] = [...existingInwardRows, ...newInwardRows].map((r:any) => ({
       id: uuidv4(), date: parseDate(r[0]), vendorId: allVendors.find(v => v.name === r[1])?.id || '',
       outwardChallanId: finalOutward.find(o => o.challanNo === r[2])?.id || '',
@@ -182,15 +187,12 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], remarks: r[12], synced: true
     }));
 
+    // UPDATE RECONCILIATION SUMMARY SHEET
     const reconRows = finalOutward.map(o => {
         const ins = finalInward.filter(i => i.outwardChallanId === o.id);
         const inQty = ins.reduce((s, i) => s + i.qty, 0);
         const pending = o.status === 'COMPLETED' ? 0 : Math.max(0, o.qty - inQty);
-        return [
-            o.challanNo, allVendors.find(v => v.id === o.vendorId)?.name || '',
-            allItems.find(i => i.id === o.skuId)?.sku || '',
-            o.qty, inQty, pending, o.status || 'OPEN', timestamp
-        ];
+        return [ o.challanNo, allVendors.find(v => v.id === o.vendorId)?.name || '', allItems.find(i => i.id === o.skuId)?.sku || '', o.qty, inQty, pending, o.status || 'OPEN', timestamp ];
     });
     
     if (reconRows.length) {
@@ -200,7 +202,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         });
     }
 
-    onUpdateState({ vendors: allVendors, items: allItems, workTypes: allWorks, users: [...existingUsers, ...unsyncedUsers.map(u => ({...u, synced: true}))], outwardEntries: finalOutward, inwardEntries: finalInward });
-    return { success: true, message: `Last Sync: ${timestamp}` };
+    onUpdateState({ vendors: allVendors, items: allItems, workTypes: allWorks, users: allUsers, outwardEntries: finalOutward, inwardEntries: finalInward });
+    return { success: true, message: `Sync Complete: ${timestamp}` };
   } catch (error: any) { return { success: false, message: error.message || "Sync failed" }; }
 };

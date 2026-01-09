@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppState, InwardEntry } from '../types';
 import { Button, Input, Select, Card } from '../components/ui';
 import { Download, Camera, Maximize2 } from 'lucide-react';
@@ -7,10 +7,10 @@ import { v4 as uuidv4 } from 'uuid';
 interface InwardProps {
   state: AppState;
   onSave: (entry: InwardEntry) => void;
-  updateState?: (k: keyof AppState, v: any) => void; // Added for marking complete
+  updateState?: (k: keyof AppState, v: any) => void;
 }
 
-const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
+const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
   const today = new Date().toISOString().split('T')[0];
   const [selectedVendorId, setSelectedVendorId] = useState('');
   const [selectedOutwardId, setSelectedOutwardId] = useState('');
@@ -18,7 +18,7 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
 
   const [formData, setFormData] = useState({
     date: today, qty: '', comboQty: '', totalWeight: '', pendalWeight: '', materialWeight: '', remarks: '',
-    enteredBy: '', checkedBy: '', photo: '', markComplete: false
+    enteredBy: '', checkedBy: '', photo: ''
   });
 
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -28,7 +28,7 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
       setFormData({
         date: today, qty: '', comboQty: '',
         totalWeight: '', pendalWeight: '',
-        materialWeight: '', remarks: '', enteredBy: '', checkedBy: '', photo: '', markComplete: false
+        materialWeight: '', remarks: '', enteredBy: '', checkedBy: '', photo: ''
       });
     }
   }, [selectedOutward]);
@@ -40,7 +40,6 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
 
   const pendingOutwards = state.outwardEntries.filter(e => {
     if (e.vendorId !== selectedVendorId) return false;
-    // Don't show completed
     if (e.status === 'COMPLETED') return false; 
     const returnedQty = state.inwardEntries.filter(i => i.outwardChallanId === e.id).reduce((sum, i) => sum + i.qty, 0);
     return returnedQty < e.qty;
@@ -57,27 +56,17 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
   const handleSubmit = () => {
     if (!selectedOutwardId || !formData.qty) return alert("Select Challan & Qty");
     
-    // VALIDATION
     if (selectedOutward) {
         const previousInwards = state.inwardEntries.filter(i => i.outwardChallanId === selectedOutwardId);
         const totalInwardQty = previousInwards.reduce((acc, curr) => acc + curr.qty, 0) + parseFloat(formData.qty);
-        const totalInwardCombo = previousInwards.reduce((acc, curr) => acc + (curr.comboQty || 0), 0) + (parseFloat(formData.comboQty) || 0);
-
         if (totalInwardQty > selectedOutward.qty) {
             alert(`Error: Total Inward Qty (${totalInwardQty}) exceeds Outward Qty (${selectedOutward.qty})!`);
             return;
         }
-
-        if (selectedOutward.comboQty && totalInwardCombo > selectedOutward.comboQty) {
-             alert(`Error: Total Combo Qty (${totalInwardCombo}) exceeds Outward Combo Qty (${selectedOutward.comboQty})!`);
-             return;
-        }
     }
 
-    // Ensure valid date
     const dateToSave = formData.date ? new Date(formData.date).toISOString() : new Date().toISOString();
 
-    // Save Inward Entry
     onSave({
       id: uuidv4(),
       outwardChallanId: selectedOutwardId,
@@ -93,15 +82,7 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
       synced: false
     });
 
-    // Handle Manual Completion (Short Close)
-    if (formData.markComplete && updateState) {
-        const updatedOutwards = state.outwardEntries.map(e => 
-            e.id === selectedOutwardId ? { ...e, status: 'COMPLETED' as const, synced: false } : e
-        );
-        updateState('outwardEntries', updatedOutwards);
-    }
-
-    setFormData({ date: today, qty: '', comboQty: '', totalWeight: '', pendalWeight: '', materialWeight: '', remarks: '', enteredBy: '', checkedBy: '', photo: '', markComplete: false });
+    setFormData({ date: today, qty: '', comboQty: '', totalWeight: '', pendalWeight: '', materialWeight: '', remarks: '', enteredBy: '', checkedBy: '', photo: '' });
     setSelectedOutwardId('');
   };
 
@@ -126,7 +107,7 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
               <div className="grid gap-2 max-h-40 overflow-y-auto">
                 {pendingOutwards.map(out => {
                    const item = state.items.find(i => i.id === out.skuId);
-                   return <div key={out.id} onClick={() => setSelectedOutwardId(out.id)} className={`p-3 border rounded-lg cursor-pointer ${selectedOutwardId === out.id ? 'border-blue-500 bg-blue-50' : 'hover:bg-slate-50'}`}>
+                   return <div key={out.id} onClick={() => setSelectedOutwardId(out.id)} className={`p-3 border rounded-lg cursor-pointer ${selectedOutwardId === out.id ? 'border-blue-500 bg-blue-50' : 'hover:bg-slate-50 shadow-sm'}`}>
                         <div className="flex justify-between font-bold text-sm"><span>#{out.challanNo}</span><span>{new Date(out.date).toLocaleDateString()}</span></div>
                         <div className="text-xs text-slate-600">{item?.sku} - Qty: {out.qty}</div>
                      </div>;
@@ -140,12 +121,12 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
         <Card title={`Receiving for #${selectedOutward.challanNo}`} className="border-t-4 border-t-green-500">
            <Input label="Recv Date" type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
            <div className="grid grid-cols-2 gap-4">
-             <Input label="Recv Qty" type="number" value={formData.qty} onChange={e => setFormData({...formData, qty: e.target.value})} />
-             <Input label="Combo Qty" type="number" value={formData.comboQty} onChange={e => setFormData({...formData, comboQty: e.target.value})} />
+             <Input label="Recv Qty" type="number" inputMode="numeric" value={formData.qty} onChange={e => setFormData({...formData, qty: e.target.value})} />
+             <Input label="Combo Qty" type="number" inputMode="numeric" value={formData.comboQty} onChange={e => setFormData({...formData, comboQty: e.target.value})} />
            </div>
            <div className="grid grid-cols-3 gap-2">
-            <Input label="Total Wt" type="number" value={formData.totalWeight} onChange={e => setFormData({...formData, totalWeight: e.target.value})} />
-            <Input label="Pendal Wt" type="number" value={formData.pendalWeight} onChange={e => setFormData({...formData, pendalWeight: e.target.value})} />
+            <Input label="Total Wt" type="number" inputMode="decimal" value={formData.totalWeight} onChange={e => setFormData({...formData, totalWeight: e.target.value})} />
+            <Input label="Pendal Wt" type="number" inputMode="decimal" value={formData.pendalWeight} onChange={e => setFormData({...formData, pendalWeight: e.target.value})} />
              <Input label="Mat. Wt" type="number" className="bg-slate-50" readOnly value={formData.materialWeight} />
            </div>
            <div className="grid grid-cols-2 gap-4">
@@ -176,12 +157,6 @@ const Inward: React.FC<InwardProps> = ({ state, onSave, updateState }) => {
             </div>
 
            <Input label="Remarks" value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} />
-           
-           <label className="flex items-center p-3 mb-4 bg-orange-50 border border-orange-200 rounded-xl cursor-pointer">
-              <input type="checkbox" className="w-5 h-5 text-orange-600 rounded" checked={formData.markComplete} onChange={e => setFormData({...formData, markComplete: e.target.checked})} />
-              <span className="ml-3 font-bold text-sm text-orange-800">Mark Job Complete (Short Close)</span>
-           </label>
-
            <Button onClick={handleSubmit}><Download size={20} className="mr-2" /> Save Inward</Button>
         </Card>
       )}
