@@ -10,7 +10,7 @@ import Outward from './pages/Outward';
 import Inward from './pages/Inward';
 import Report from './pages/Report';
 
-const APP_VERSION = "2.5.0-production-fixed";
+const APP_VERSION = "2.6.0-sync-fixed";
 
 const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState('outward');
@@ -18,42 +18,47 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const tokenClient = useRef<any>(null);
   
-  // Ref to hold the latest state specifically for the sync callback
   const syncTargetRef = useRef<AppState>(state);
 
   useEffect(() => {
     saveData(state);
+    syncTargetRef.current = state;
   }, [state]);
+
+  // Unified update helper that can optionally trigger sync
+  const updateAndSync = (newState: AppState, shouldSync: boolean = false) => {
+    setState(newState);
+    if (shouldSync) {
+        triggerAutoSync(newState, false); // Auto sync doesn't prompt if possible
+    }
+  };
 
   const updateState = (k: keyof AppState, v: any) => {
     const newState = { ...state, [k]: v };
-    setState(newState);
+    updateAndSync(newState, k === 'outwardEntries'); // Trigger sync on outward updates (e.g. status changes)
   };
   
   const addOutwardEntry = (entry: OutwardEntry) => {
     const newState = { ...state, outwardEntries: [...state.outwardEntries, entry] };
-    setState(newState);
-    triggerAutoSync(newState);
+    updateAndSync(newState, true);
   };
 
   const addInwardEntry = (entry: InwardEntry) => {
     const newState = { ...state, inwardEntries: [...state.inwardEntries, entry] };
-    setState(newState);
-    triggerAutoSync(newState);
+    updateAndSync(newState, true);
   };
 
   const handleAddItem = (item: Item) => setState(prev => ({ ...prev, items: [...prev.items, item] }));
   const handleSyncComplete = (newState: AppState) => setState(newState);
 
-  const triggerAutoSync = async (latestState: AppState) => {
+  const triggerAutoSync = async (latestState: AppState, forcePrompt: boolean = false) => {
     const apiKey = localStorage.getItem('GOOGLE_API_KEY');
     const clientId = localStorage.getItem('GOOGLE_CLIENT_ID');
     if (!apiKey || !clientId || isSyncing) return;
 
-    // Update the ref so the callback (even if already initialized) sees this specific data
     syncTargetRef.current = latestState;
-
     setIsSyncing(true);
+
     try {
       await initGapi(apiKey);
       const google = (window as any).google;
@@ -64,12 +69,13 @@ const App: React.FC = () => {
           scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
           callback: async (resp: any) => {
             if (resp.error) {
-              console.error("Auth Error", resp);
+              console.error("OAuth Error:", resp);
               setIsSyncing(false);
+              // Only alert if the error is severe or if user explicitly requested sync
+              if (forcePrompt) alert(`Auth Error: ${resp.error_description || resp.error}`);
               return;
             }
             (window as any).gapi.client.setToken(resp);
-            // CRITICAL: Pull data from the ref to ensure it's the exact version we want to sync
             await syncDataToSheets(syncTargetRef.current, handleSyncComplete);
             setIsSyncing(false);
           },
@@ -77,7 +83,9 @@ const App: React.FC = () => {
       }
 
       if (tokenClient.current) {
-        tokenClient.current.requestAccessToken({ prompt: '' });
+        // use prompt: 'none' to try and get a token silently if possible
+        // only use forcePrompt/standard request if 'none' fails or we are in a manual flow
+        tokenClient.current.requestAccessToken({ prompt: forcePrompt ? 'select_account' : '' });
       } else {
         setIsSyncing(false);
       }
@@ -92,7 +100,7 @@ const App: React.FC = () => {
       case 'masters': return <Masters state={state} updateState={updateState} />;
       case 'outward': return <Outward state={state} onSave={addOutwardEntry} onAddItem={handleAddItem} />;
       case 'inward': return <Inward state={state} onSave={addInwardEntry} updateState={updateState} />;
-      case 'recon': return <Report state={state} markSynced={handleSyncComplete} updateState={updateState} />;
+      case 'recon': return <Report state={state} markSynced={handleSyncComplete} updateState={updateState} onManualSync={() => triggerAutoSync(state, true)} />;
       default: return <div>Page not found</div>;
     }
   };
@@ -123,7 +131,7 @@ const App: React.FC = () => {
       </main>
       
       <footer className="w-full text-center py-8 pb-32 text-[10px] font-mono text-slate-400 tracking-widest no-print border-t border-slate-100 mt-10">
-          JW TRACKER SYSTEM • DEPLOYMENT VERSION: {APP_VERSION}
+          JW TRACKER SYSTEM • VERSION: {APP_VERSION}
       </footer>
 
       <TabBar currentTab={currentTab} setTab={setCurrentTab} />

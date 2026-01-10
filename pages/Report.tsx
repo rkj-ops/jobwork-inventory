@@ -25,11 +25,10 @@ interface ReportProps {
   state: AppState;
   markSynced: (newState: AppState) => void;
   updateState?: (k: keyof AppState, v: any) => void;
+  onManualSync?: () => void;
 }
 
-const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
-  const [syncStatus, setSyncStatus] = useState<string>('');
-  const [isSyncing, setIsSyncing] = useState(false);
+const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManualSync }) => {
   const [printEntry, setPrintEntry] = useState<OutwardEntry | null>(null);
   const [detailView, setDetailView] = useState<ReportRow | null>(null);
   
@@ -40,59 +39,13 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [hideCompleted, setHideCompleted] = useState(false);
 
-  const tokenClient = useRef<any>(null);
-
-  const initTokenClient = (id: string) => {
-    const google = (window as any).google;
-    if (google?.accounts?.oauth2) {
-      tokenClient.current = google.accounts.oauth2.initTokenClient({
-        client_id: id,
-        scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
-        callback: async (resp: any) => {
-          if (resp.error) {
-             setSyncStatus(`Auth Error: ${resp.error}`);
-             setIsSyncing(false);
-             return;
-          }
-          const gapi = (window as any).gapi;
-          if (gapi.client) gapi.client.setToken(resp);
-          await performSync();
-        },
-      });
-    }
-  };
-
-  const performSync = async () => {
-    setSyncStatus('Syncing...');
-    const res = await syncDataToSheets(state, markSynced);
-    setSyncStatus(res.message);
-    setIsSyncing(false);
-  };
-
-  const handleSync = async () => {
-    const apiKey = localStorage.getItem('GOOGLE_API_KEY');
-    const clientId = localStorage.getItem('GOOGLE_CLIENT_ID');
-    if (!apiKey || !clientId) { 
-        alert("Please configure API Keys in Setup menu first.");
-        return; 
-    }
-    setIsSyncing(true); setSyncStatus('Connecting...');
-    try {
-      await initGapi(apiKey);
-      if (!tokenClient.current) initTokenClient(clientId);
-      tokenClient.current.requestAccessToken({ prompt: '' });
-    } catch (e: any) {
-      setSyncStatus(`Error: ${e.message}`);
-      setIsSyncing(false);
-    }
-  };
-
   const markJobComplete = (outwardId: string) => {
     if(!updateState) return;
     if(confirm("Are you sure you want to mark this job as COMPLETE? (Short Close)")) {
         const updatedOutwards = state.outwardEntries.map(e => 
             e.id === outwardId ? { ...e, status: 'COMPLETED' as const, synced: false } : e
         );
+        // This will trigger the sync in App.tsx unified update helper
         updateState('outwardEntries', updatedOutwards);
         if(detailView) setDetailView(null);
     }
@@ -161,7 +114,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
         const inQty = inwards.reduce((s, i) => s + i.qty, 0);
         const inComboQty = inwards.reduce((s, i) => s + (i.comboQty || 0), 0);
         
-        const recvDates = Array.from(new Set(inwards.map(i => i.date.split('T')[0]))).sort();
+        const recvDates = Array.from(new Set<string>(inwards.map(i => i.date.split('T')[0]))).sort();
         const lastRecvDate = recvDates.length > 0 ? recvDates[recvDates.length - 1] : null;
 
         const vendor = state.vendors.find(v => v.id === o.vendorId);
@@ -292,11 +245,11 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
       <Card className="bg-blue-50 border-blue-100">
         <div className="flex justify-between items-center mb-2">
           <h3 className="font-bold text-blue-900">Cloud Sync</h3>
-          <Button onClick={handleSync} disabled={isSyncing} className="w-auto px-4 py-2 text-sm bg-blue-600">
-             {isSyncing ? '...' : 'Sync Now'}
+          <Button onClick={onManualSync} className="w-auto px-4 py-2 text-sm bg-blue-600">
+             Sync & Refresh
           </Button>
         </div>
-        {syncStatus && <p className="text-[10px] font-mono text-blue-800 break-all bg-white/50 p-2 rounded border border-blue-100">{syncStatus}</p>}
+        <p className="text-[10px] text-blue-700 font-medium">Automatic sync attempts occur on save. Use this button for manual refresh or if authorization is lost.</p>
       </Card>
 
       <Card className="p-3">
