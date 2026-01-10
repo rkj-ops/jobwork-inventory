@@ -90,7 +90,7 @@ const getInwardSignature = (dateStr: string, vendor: string, outChallan: string,
 
 export const syncDataToSheets = async (state: AppState, onUpdateState: (newState: AppState) => void) => {
   const gapi = (window as any).gapi;
-  if (!gapi.client.getToken()) return { success: false, message: "Authorization lost. Please sync manually." };
+  if (!gapi.client.getToken()) return { success: false, message: "Authorization required. Click Sync manually." };
 
   try {
     const timestamp = new Date().toLocaleString();
@@ -119,7 +119,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         getInwardSignature(r[0]||'', r[1]||'', r[2]||'', parseFloat(r[4]||0))
     ));
 
-    // NEW DATA PUSH
+    // DATA PUSH
     const unsyncedVendors = state.vendors.filter(e => !e.synced && !existingVendors.some(ev => ev.code === e.code));
     const unsyncedItems = state.items.filter(e => !e.synced && !existingItems.some(ei => ei.sku === e.sku));
     const unsyncedWorks = state.workTypes.filter(e => !e.synced && !existingWorks.some(ew => ew.name === e.name));
@@ -165,7 +165,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     }
     if (newInwardRows.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.inwardSheetName}!A:N`, valueInputOption: "USER_ENTERED", resource: { values: newInwardRows } });
 
-    // REFRESH DATA & MERGE
+    // MERGE & STATE RECOVERY
     const allVendors = [...existingVendors, ...unsyncedVendors.map(v => ({...v, synced: true}))];
     const allItems = [...existingItems, ...unsyncedItems.map(i => ({...i, synced: true}))];
     const allWorks = [...existingWorks, ...unsyncedWorks.map(w => ({...w, synced: true}))];
@@ -173,29 +173,19 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
 
     const finalOutward: OutwardEntry[] = [...existingOutwardRows, ...newOutwardRows].map((r:any) => {
       const challanNo = r[2];
-      // CRITICAL: Preserve local 'COMPLETED' status during merge
       const localMatch = state.outwardEntries.find(o => o.challanNo === challanNo);
+      // Status preservation logic
       const statusFromSheet = r[14] as 'OPEN' | 'COMPLETED';
       const effectiveStatus = localMatch?.status === 'COMPLETED' ? 'COMPLETED' : statusFromSheet;
 
       return {
-        id: localMatch?.id || uuidv4(), 
-        date: parseDate(r[0]), 
+        id: localMatch?.id || uuidv4(), date: parseDate(r[0]), 
         vendorId: allVendors.find(v => v.name === r[1])?.id || '',
-        challanNo: challanNo, 
-        skuId: allItems.find(i => i.sku === r[3])?.id || '',
-        qty: parseFloat(r[4] || 0), 
-        comboQty: parseFloat(r[5] || 0),
-        totalWeight: parseFloat(r[6] || 0), 
-        pendalWeight: parseFloat(r[7] || 0), 
-        materialWeight: parseFloat(r[8] || 0),
-        checkedBy: r[9], 
-        enteredBy: r[10], 
-        photoUrl: r[11], 
-        workId: allWorks.find(w => w.name === r[12])?.id || '',
-        remarks: r[13], 
-        status: effectiveStatus, 
-        synced: true
+        challanNo: challanNo, skuId: allItems.find(i => i.sku === r[3])?.id || '',
+        qty: parseFloat(r[4] || 0), comboQty: parseFloat(r[5] || 0),
+        totalWeight: parseFloat(r[6] || 0), pendalWeight: parseFloat(r[7] || 0), materialWeight: parseFloat(r[8] || 0),
+        checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], workId: allWorks.find(w => w.name === r[12])?.id || '',
+        remarks: r[13], status: effectiveStatus, synced: true
       };
     });
 
@@ -207,30 +197,23 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       });
 
       return {
-        id: localMatch?.id || uuidv4(), 
-        date: parseDate(r[0]), 
+        id: localMatch?.id || uuidv4(), date: parseDate(r[0]), 
         vendorId: allVendors.find(v => v.name === r[1])?.id || '',
         outwardChallanId: finalOutward.find(o => o.challanNo === outChallan)?.id || '',
         skuId: allItems.find(i => i.sku === r[3])?.id || '',
-        qty: parseFloat(r[4] || 0), 
-        comboQty: parseFloat(r[5] || 0),
-        totalWeight: parseFloat(r[6] || 0), 
-        pendalWeight: parseFloat(r[7] || 0), 
-        materialWeight: parseFloat(r[8] || 0),
-        checkedBy: r[9], 
-        enteredBy: r[10], 
-        photoUrl: r[11], 
-        remarks: r[12], 
-        synced: true
+        qty: parseFloat(r[4] || 0), comboQty: parseFloat(r[5] || 0),
+        totalWeight: parseFloat(r[6] || 0), pendalWeight: parseFloat(r[7] || 0), materialWeight: parseFloat(r[8] || 0),
+        checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], remarks: r[12], synced: true
       };
     });
 
-    // UPDATE RECONCILIATION SUMMARY SHEET (20 Columns)
+    // RECONCILIATION SUMMARY (Updated to include Inward Entered/Checked)
+    // 22 Columns strictly following logical sequence
     const reconRows = finalOutward.map(o => {
         const ins = finalInward.filter(i => i.outwardChallanId === o.id);
-        const inQty = ins.reduce((s, i) => s + i.qty, 0);
-        const inCombo = ins.reduce((s, i) => s + (i.comboQty || 0), 0);
-        const twRec = ins.reduce((s, i) => s + i.totalWeight, 0);
+        const inQty = ins.reduce((sum, i) => sum + i.qty, 0);
+        const inCombo = ins.reduce((sum, i) => sum + (i.comboQty || 0), 0);
+        const twRec = ins.reduce((sum, i) => sum + i.totalWeight, 0);
         
         const isMarkedClosed = o.status === 'COMPLETED';
         const isActuallyDone = inQty >= o.qty && o.qty > 0;
@@ -243,15 +226,14 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         }
 
         const recvDatesStr = Array.from(new Set(ins.map(i => i.date.split('T')[0])))
-            .sort()
-            .map(d => formatDisplayDate(d))
-            .join('; ');
+            .sort().map(d => formatDisplayDate(d)).join('; ');
 
         const inwardChecked = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
+        const inwardEntered = Array.from(new Set(ins.map(i => i.enteredBy).filter(Boolean))).join('; ');
         const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
 
         return [
-            statusStr,
+            statusStr, 
             allVendors.find(v => v.id === o.vendorId)?.name || 'Unknown',
             formatDisplayDate(o.date),
             recvDatesStr || '---',
@@ -268,15 +250,18 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
             twRec,
             (o.totalWeight - twRec).toFixed(3),
             inwardChecked || '---',
+            inwardEntered || '---', // New Column
             inwardRemarks || '---',
             o.checkedBy || '---',
+            o.enteredBy || '---', // New Column
             o.remarks || '---'
         ];
     });
     
     if (reconRows.length) {
+        // Updated range to V (22 columns)
         await gapi.client.sheets.spreadsheets.values.update({
-            spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:T${reconRows.length + 1}`,
+            spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:V${reconRows.length + 1}`,
             valueInputOption: "USER_ENTERED", resource: { values: reconRows }
         });
     }

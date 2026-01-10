@@ -45,7 +45,6 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
         const updatedOutwards = state.outwardEntries.map(e => 
             e.id === outwardId ? { ...e, status: 'COMPLETED' as const, synced: false } : e
         );
-        // This will trigger the sync in App.tsx unified update helper
         updateState('outwardEntries', updatedOutwards);
         if(detailView) setDetailView(null);
     }
@@ -55,6 +54,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
     if (!sku) return;
     const canvas = document.createElement('canvas');
     try {
+        // Generate high-density barcode but with strict display height
         JsBarcode(canvas, sku, {
             format: "CODE128",
             displayValue: false,
@@ -69,27 +69,56 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                 <html>
                 <head><style>
                     @page { size: 50mm 25mm; margin: 0; }
-                    body { margin: 0; padding: 0; width: 50mm; height: 25mm; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; font-family: sans-serif; overflow: hidden; background: white; }
-                    .top-half { height: 12.5mm; width: 50mm; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 0 2mm; box-sizing: border-box; }
-                    .bottom-half { height: 12.5mm; width: 50mm; display: flex; align-items: center; justify-content: center; overflow: hidden; padding-bottom: 1mm; box-sizing: border-box; }
-                    .sku-text { 
-                        font-weight: bold; 
-                        font-size: 10pt; 
-                        text-align: center; 
-                        word-break: break-all;
+                    * { box-sizing: border-box; }
+                    body { 
+                        margin: 0; 
+                        padding: 0; 
+                        width: 50mm; 
+                        height: 25mm; 
+                        display: flex; 
+                        flex-direction: column; 
+                        align-items: center; 
+                        justify-content: flex-start; 
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                        overflow: hidden; 
+                        background: white; 
+                    }
+                    .section {
+                        width: 50mm;
+                        height: 12.5mm;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        overflow: hidden;
+                        padding: 0.5mm 2mm;
+                    }
+                    .sku-container {
+                        text-align: center;
+                        font-weight: 800;
+                        color: black;
+                        line-height: 1.05;
+                        width: 100%;
                         display: -webkit-box;
                         -webkit-line-clamp: 2;
                         -webkit-box-orient: vertical;
-                        overflow: hidden;
-                        line-height: 1.1;
+                        /* Font-size auto-shrinking logic using clamp */
+                        font-size: clamp(8pt, 3vw, 11pt);
+                        word-break: break-all;
                     }
-                    .barcode-img { height: 11mm; max-width: 46mm; object-fit: contain; }
+                    .barcode-container {
+                        padding-bottom: 1mm;
+                    }
+                    .barcode-img { 
+                        height: 10.5mm; 
+                        width: 46mm; 
+                        object-fit: contain; 
+                    }
                 </style></head>
                 <body>
-                    <div class="top-half">
-                        <div class="sku-text">${sku}</div>
+                    <div class="section">
+                        <div class="sku-container">${sku}</div>
                     </div>
-                    <div class="bottom-half">
+                    <div class="section barcode-container">
                         <img src="${barcodeData}" class="barcode-img" />
                     </div>
                     <script>
@@ -111,8 +140,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
   const reportData = useMemo(() => {
     let rows: ReportRow[] = state.outwardEntries.map(o => {
         const inwards = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
-        const inQty = inwards.reduce((s, i) => s + i.qty, 0);
-        const inComboQty = inwards.reduce((s, i) => s + (i.comboQty || 0), 0);
+        const inQty = inwards.reduce((sum, i) => sum + i.qty, 0);
+        const inComboQty = inwards.reduce((sum, i) => sum + (i.comboQty || 0), 0);
         
         const recvDates = Array.from(new Set<string>(inwards.map(i => i.date.split('T')[0]))).sort();
         const lastRecvDate = recvDates.length > 0 ? recvDates[recvDates.length - 1] : null;
@@ -178,7 +207,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
             <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
                 <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
                     <h3 className="font-bold text-lg">Details: #{detailView.challanNo}</h3>
-                    <button onClick={() => setDetailView(null)}><Trash2 className="rotate-45" /></button>
+                    <button onClick={() => setDetailView(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><Trash2 className="rotate-45" size={20}/></button>
                 </div>
                 <div className="p-4 max-h-[60vh] overflow-y-auto">
                     <div className="mb-4 bg-blue-50 p-4 rounded-xl text-sm border border-blue-100 shadow-inner">
@@ -189,8 +218,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                           <p><strong>Status:</strong> <span className={`font-bold ${detailView.status === 'COMPLETED' ? 'text-green-600' : 'text-orange-600'}`}>{detailView.status || 'OPEN'}</span></p>
                           <p><strong>Sent Qty:</strong> {detailView.qty} (Combo: {detailView.comboQty ?? 0})</p>
                           <p><strong>Recv Qty:</strong> {detailView.inQty} (Combo: {detailView.inComboQty})</p>
-                          <p><strong>Entered By:</strong> {detailView.enteredBy || 'Admin'}</p>
-                          <p><strong>Checked By:</strong> {detailView.checkedBy || '---'}</p>
+                          <p><strong>Out. By:</strong> {detailView.enteredBy || 'Admin'}</p>
+                          <p><strong>Out. Chk By:</strong> {detailView.checkedBy || '---'}</p>
                         </div>
                         {detailView.recvDates.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-blue-200">
@@ -212,17 +241,17 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                                     <tr>
                                       <th className="p-2 text-left">Date</th>
                                       <th className="p-2 text-right">Qty</th>
-                                      <th className="p-2 text-right">Combo</th>
-                                      <th className="p-2 text-left">User</th>
+                                      <th className="p-2 text-left">Ent. By</th>
+                                      <th className="p-2 text-left">Chk. By</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {detailView.inwards.map(i => (
                                         <tr key={i.id} className="border-b last:border-0 hover:bg-slate-50">
-                                            <td className="p-2">{formatDisplayDate(i.date)}</td>
+                                            <td className="p-2 whitespace-nowrap">{formatDisplayDate(i.date)}</td>
                                             <td className="p-2 text-right font-bold">{i.qty}</td>
-                                            <td className="p-2 text-right">{i.comboQty ?? 0}</td>
-                                            <td className="p-2 text-slate-500 text-[10px]">{i.enteredBy}</td>
+                                            <td className="p-2 text-slate-500 text-[10px] uppercase font-bold">{i.enteredBy || '---'}</td>
+                                            <td className="p-2 text-slate-500 text-[10px] uppercase font-bold">{i.checkedBy || '---'}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -232,7 +261,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                 </div>
                 <div className="p-4 border-t bg-slate-50 flex justify-end gap-2">
                     {detailView.status !== 'COMPLETED' && (
-                        <Button variant="secondary" onClick={() => markJobComplete(detailView.id)} className="bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200">
+                        <Button variant="secondary" onClick={() => markJobComplete(detailView.id)} className="bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200 w-auto px-4">
                            <CheckCircle size={16} className="mr-2"/> Short Close
                         </Button>
                     )}
@@ -296,8 +325,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                             <div className="text-xs text-slate-400 font-mono mt-0.5">CH#{r.challanNo} • {formatDisplayDate(r.date)}</div>
                         </div>
                         <div className="flex gap-1">
-                          <button onClick={(e) => { e.stopPropagation(); printLabel(r.itemSku); }} className="text-blue-500 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><ScanBarcode size={18}/></button>
-                          <button onClick={(e) => { e.stopPropagation(); setPrintEntry(r); setTimeout(()=>window.print(),100); }} className="text-green-500 bg-green-50 p-2 rounded-lg hover:bg-green-100"><Printer size={18}/></button>
+                          <button onClick={(e) => { e.stopPropagation(); printLabel(r.itemSku); }} className="text-blue-500 bg-blue-50 p-2 rounded-lg hover:bg-blue-100 transition-colors"><ScanBarcode size={18}/></button>
+                          <button onClick={(e) => { e.stopPropagation(); setPrintEntry(r); setTimeout(()=>window.print(),100); }} className="text-green-500 bg-green-50 p-2 rounded-lg hover:bg-green-100 transition-colors"><Printer size={18}/></button>
                           <div className="text-slate-300 p-2 group-hover:text-blue-400 transition-colors"><Info size={18} /></div>
                         </div>
                     </div>

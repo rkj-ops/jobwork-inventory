@@ -54,11 +54,22 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
   };
 
   const handleSubmit = () => {
+    const qtyVal = parseFloat(formData.qty);
+    const comboVal = parseFloat(formData.comboQty) || 0;
+
     if (!selectedOutwardId || !formData.qty) return alert("Select Challan & Qty");
+
+    // VALIDATION: Combo Qty <= Recv Qty
+    if (comboVal > qtyVal) {
+        alert(`Error: Combo Qty (${comboVal}) cannot be greater than Received Qty (${qtyVal})!`);
+        return;
+    }
     
     if (selectedOutward) {
         const previousInwards = state.inwardEntries.filter(i => i.outwardChallanId === selectedOutwardId);
-        const totalInwardQty = previousInwards.reduce((acc, curr) => acc + curr.qty, 0) + parseFloat(formData.qty);
+        const totalInwardQty = previousInwards.reduce((acc, curr) => acc + curr.qty, 0) + qtyVal;
+        
+        // VALIDATION: Total Inward <= Outward Qty Sent
         if (totalInwardQty > selectedOutward.qty) {
             alert(`Error: Total Inward Qty (${totalInwardQty}) exceeds Outward Qty (${selectedOutward.qty})!`);
             return;
@@ -73,8 +84,8 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
       vendorId: selectedVendorId,
       skuId: selectedOutward?.skuId || '',
       ...formData,
-      qty: parseFloat(formData.qty),
-      comboQty: parseFloat(formData.comboQty) || 0,
+      qty: qtyVal,
+      comboQty: comboVal,
       totalWeight: parseFloat(formData.totalWeight) || 0,
       pendalWeight: parseFloat(formData.pendalWeight) || 0,
       materialWeight: parseFloat(formData.materialWeight) || 0,
@@ -102,14 +113,14 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
 
         {selectedVendorId && (
           <div className="mb-4">
-            <label className="block text-sm font-medium text-slate-700 mb-1">Pending Challans</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1 font-bold">Pending Challans</label>
             {pendingOutwards.length === 0 ? <div className="text-slate-500 text-sm p-2 border rounded bg-slate-50">No pending items.</div> : 
-              <div className="grid gap-2 max-h-40 overflow-y-auto">
+              <div className="grid gap-2 max-h-48 overflow-y-auto pr-1">
                 {pendingOutwards.map(out => {
                    const item = state.items.find(i => i.id === out.skuId);
-                   return <div key={out.id} onClick={() => setSelectedOutwardId(out.id)} className={`p-3 border rounded-lg cursor-pointer ${selectedOutwardId === out.id ? 'border-blue-500 bg-blue-50' : 'hover:bg-slate-50 shadow-sm'}`}>
-                        <div className="flex justify-between font-bold text-sm"><span>#{out.challanNo}</span><span>{new Date(out.date).toLocaleDateString()}</span></div>
-                        <div className="text-xs text-slate-600">{item?.sku} - Qty: {out.qty}</div>
+                   return <div key={out.id} onClick={() => setSelectedOutwardId(out.id)} className={`p-3 border rounded-xl cursor-pointer transition-all ${selectedOutwardId === out.id ? 'border-blue-500 bg-blue-50 shadow-md ring-1 ring-blue-500' : 'bg-white hover:bg-slate-50 border-slate-200 shadow-sm'}`}>
+                        <div className="flex justify-between font-bold text-sm"><span>#{out.challanNo}</span><span className="text-slate-400 font-mono text-[10px] uppercase tracking-tighter">{new Date(out.date).toLocaleDateString()}</span></div>
+                        <div className="text-xs text-slate-600 mt-1 font-black uppercase tracking-tight">{item?.sku} - <span className="text-blue-600">Qty: {out.qty}</span></div>
                      </div>;
                 })}
               </div>}
@@ -141,15 +152,15 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
            </div>
            
            <div className="mb-4">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Inward Photo</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1 font-bold">Inward Photo</label>
               <div className="flex gap-4 items-center">
-                  <label className="flex-1 flex items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50">
+                  <label className="flex-1 flex items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 border-slate-300">
                      <Camera className="mr-2 text-slate-400"/> {formData.photo ? 'Retake' : 'Capture'}
                      <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
                   </label>
                   {formData.photo && (
                       <div className="relative group cursor-pointer" onClick={() => setPreviewImage(formData.photo)}>
-                        <img src={formData.photo} className="h-16 w-16 rounded-lg border object-cover" />
+                        <img src={formData.photo} className="h-16 w-16 rounded-lg border border-slate-300 object-cover" />
                         <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 flex items-center justify-center rounded-lg"><Maximize2 className="text-white opacity-0 group-hover:opacity-100" size={16}/></div>
                       </div>
                   )}
