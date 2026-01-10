@@ -187,7 +187,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], remarks: r[12], synced: true
     }));
 
-    // UPDATE RECONCILIATION SUMMARY SHEET (20 Columns format)
+    // UPDATE RECONCILIATION SUMMARY SHEET (20 Columns format A-T)
     const reconRows = finalOutward.map(o => {
         const ins = finalInward.filter(i => i.outwardChallanId === o.id);
         const inQty = ins.reduce((s, i) => s + i.qty, 0);
@@ -208,9 +208,9 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         const inwardChecked = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
         const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
 
-        // COLUMNS A-T (20 total)
+        // COLUMNS A-T (Strict Header Order)
         return [
-            statusStr, // status
+            statusStr, // status(complete/pending/short qty completed)
             allVendors.find(v => v.id === o.vendorId)?.name || 'Unknown', // vendor
             o.date.split('T')[0], // sent date
             recvDatesStr || '---', // recieved date

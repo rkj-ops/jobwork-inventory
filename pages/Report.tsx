@@ -116,17 +116,17 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                 <html>
                 <head><style>
                     @page { size: 50mm 25mm; margin: 0; }
-                    body { margin: 0; padding: 0; width: 50mm; height: 25mm; display: flex; flex-direction: column; align-items: center; justify-content: space-between; font-family: sans-serif; overflow: hidden; }
-                    .top { height: 10mm; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-top: 1mm;}
-                    .bottom { height: 14mm; width: 100%; display: flex; justify-content: center; align-items: flex-start; }
-                    .sku { font-weight: bold; font-size: 11pt; text-align: center; margin-top: 1px; }
-                    .barcode-img { height: 12mm; max-width: 48mm; }
+                    body { margin: 0; padding: 0; width: 50mm; height: 25mm; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; font-family: sans-serif; overflow: hidden; }
+                    .top-half { height: 12.5mm; width: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+                    .bottom-half { height: 12.5mm; width: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+                    .sku-text { font-weight: bold; font-size: 11pt; text-align: center; white-space: nowrap; max-width: 48mm; }
+                    .barcode-img { height: 11mm; max-width: 48mm; object-fit: contain; }
                 </style></head>
                 <body>
-                    <div class="top">
-                        <div class="sku">${sku}</div>
+                    <div class="top-half">
+                        <div class="sku-text">${sku}</div>
                     </div>
-                    <div class="bottom">
+                    <div class="bottom-half">
                         <img src="${barcodeData}" class="barcode-img" />
                     </div>
                     <script>window.print(); window.close();</script>

@@ -32,6 +32,9 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   };
 
   const handleDownloadReconReport = () => {
+    // Exact format requested (20 columns A-T):
+    // status(complete/pending/short qty completed) | vendor | sent date | recieved date | challan no. | work done | sku | qty sent | qty rec | short qty | combo qty sent | combo qty recieved | combo qty short | TW Sent | TW Received | short/excess weight | inward checked by | inward remarks | outward checked by | outward remarks
+    
     const reportData = state.outwardEntries.map(o => {
         const ins = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
         const inQty = ins.reduce((s, i) => s + i.qty, 0);
@@ -56,7 +59,6 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
         const inwardCheckedBy = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
         const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
 
-        // Format requested (20 columns from A to T)
         return {
             'status(complete/pending/short qty completed)': statusStr,
             'vendor': vendor?.name || 'Unknown',
