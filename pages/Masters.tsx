@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Vendor, Item, WorkType, AppState, OutwardEntry, InwardEntry, formatDisplayDate } from '../types';
 import { Button, Input, Card } from '../components/ui';
-import { Trash2, FileDown, Upload, Settings, Database, Download, Lock, BarChart3, Globe } from 'lucide-react';
+import { Trash2, FileDown, Upload, Settings, Database, Download, Lock, BarChart3, Globe, ShieldCheck } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { exportToCSV, parseCSV, downloadTemplate } from '../services/csv';
 
@@ -21,7 +21,8 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   const [newUser, setNewUser] = useState({ name: '' });
   
   const [apiKey, setApiKey] = useState(localStorage.getItem('GOOGLE_API_KEY') || '');
-  const [clientId, setClientId] = useState(localStorage.getItem('GOOGLE_CLIENT_ID') || '');
+  const [clientId, setClientId] = useState(localStorage.getItem('GOOGLE_CLIENT_ID') || '1066501284390-o19fpc6g5voo2dahe5o9ct5esa5743ht.apps.googleusercontent.com');
+  const [clientSecret, setClientSecret] = useState(localStorage.getItem('GOOGLE_CLIENT_SECRET') || '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');
 
   const currentOrigin = window.location.origin;
 
@@ -31,6 +32,13 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
     } else {
         alert("Invalid Username or Password");
     }
+  };
+
+  const saveConfig = () => {
+    localStorage.setItem('GOOGLE_API_KEY', apiKey);
+    localStorage.setItem('GOOGLE_CLIENT_ID', clientId.trim());
+    localStorage.setItem('GOOGLE_CLIENT_SECRET', clientSecret.trim());
+    alert('Configuration Saved Successfully');
   };
 
   const handleDownloadReconReport = () => {
@@ -63,7 +71,7 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
         const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
 
         return {
-            'status(complete/pending/short qty completed)': statusStr,
+            'status': statusStr,
             'vendor': vendor?.name || 'Unknown',
             'sent date': formatDisplayDate(o.date),
             'recieved date': recvDatesStr || '---',
@@ -75,24 +83,14 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
             'short qty': Math.max(0, o.qty - inQty),
             'combo qty sent': o.comboQty ?? 0,
             'combo qty recieved': inCombo,
-            'combo qty short': Math.max(0, (o.comboQty ?? 0) - inCombo),
             'TW Sent': o.totalWeight,
             'TW Received': twRec,
-            'short/excess weight': (o.totalWeight - twRec).toFixed(3),
-            'inward checked by': inwardCheckedBy || '---',
-            'inward remarks': inwardRemarks || '---',
             'outward checked by': o.checkedBy || '---',
-            'outward remarks': o.remarks || '---'
+            'inward checked by': inwardCheckedBy || '---'
         };
     });
     
     exportToCSV(reportData, `Reconciliation_Report_${new Date().toISOString().split('T')[0]}`);
-  };
-
-  const saveConfig = () => {
-    localStorage.setItem('GOOGLE_API_KEY', apiKey);
-    localStorage.setItem('GOOGLE_CLIENT_ID', clientId);
-    alert('Configuration Saved');
   };
 
   const addVendor = () => {
@@ -185,12 +183,6 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
               <Button onClick={handleDownloadReconReport} variant="primary" className="mb-3 py-4">
                  <BarChart3 size={20} className="mr-3"/> Export Reconciliation Report (CSV)
               </Button>
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">Column Order (A-T)</h4>
-                <p className="text-[10px] text-slate-500 font-mono leading-relaxed">
-                  Status, Vendor, Sent Date, Recv Date, Challan, Work, SKU, Qty Sent, Qty Rec, Short Qty, Combo Sent, Combo Rec, Combo Short, TW Sent, TW Rec, Wt Diff, Inward Check, Inward Rem, Outward Check, Outward Rem.
-                </p>
-              </div>
            </Card>
 
            <Card title="Bulk Master Import">
@@ -213,21 +205,18 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
         <div className="px-4">
           <Card title="Cloud Infrastructure">
             <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl text-[11px] text-orange-800 space-y-2">
-                <div className="flex items-center font-bold uppercase"><Globe size={14} className="mr-2"/> Mobile Auth Setup</div>
-                <p>If you see "OAuth Client Not Found" or origin errors on mobile:</p>
-                <ol className="list-decimal ml-4 space-y-1">
-                    <li>Open <a href="https://console.cloud.google.com/" target="_blank" className="font-bold underline">Google Cloud Console</a>.</li>
-                    <li>Go to <strong>APIs & Services</strong> &gt; <strong>Credentials</strong>.</li>
-                    <li>Edit your <strong>Web Application</strong> client.</li>
-                    <li>Add this exact URL to <strong>Authorized JavaScript Origins</strong>:</li>
-                </ol>
-                <div className="mt-2 p-2 bg-white border border-orange-300 rounded font-mono text-[10px] select-all break-all">
+                <div className="flex items-center font-bold uppercase"><Globe size={14} className="mr-2"/> Authentication Required Setup</div>
+                <p>Ensure your <strong>Vercel Origin</strong> is authorized in the Google Console to prevent mobile errors:</p>
+                <div className="p-2 bg-white border border-orange-300 rounded font-mono text-[10px] select-all break-all">
                     {currentOrigin}
                 </div>
+                <p className="italic">Note: Client Secret is required for some server-side sync features but is hidden in public frontend traffic.</p>
             </div>
             
-            <Input label="Google Client ID" value={clientId} onChange={e => setClientId(e.target.value)} />
-            <Input label="Google API Key" value={apiKey} onChange={e => setApiKey(e.target.value)} />
+            <Input label="Google Client ID" value={clientId} onChange={e => setClientId(e.target.value)} placeholder="00000000-xxxx.apps.googleusercontent.com" />
+            <Input label="Google Client Secret" type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)} placeholder="Enter Client Secret" />
+            <Input label="Google API Key" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="AIzaSy..." />
+            
             <Button onClick={saveConfig} className="mt-2"><Settings size={18} className="mr-2"/> Save Credentials</Button>
           </Card>
         </div>
@@ -246,7 +235,7 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
             {state.vendors.map(v => (
               <div key={v.id} className="bg-white p-4 rounded-xl border border-slate-100 flex justify-between items-center shadow-sm">
                 <div>
-                  <div className="font-bold text-slate-700 flex items-center">{v.name} {!v.synced && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-orange-400" />}</div>
+                  <div className="font-bold text-slate-700">{v.name} {!v.synced && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-orange-400 inline-block" />}</div>
                   <div className="text-[10px] font-black text-slate-400 uppercase">{v.code}</div>
                 </div>
                 <button onClick={() => updateState('vendors', state.vendors.filter(x => x.id !== v.id))} className="text-red-400 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
@@ -269,7 +258,7 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
             {state.items.map(i => (
               <div key={i.id} className="bg-white p-4 rounded-xl border border-slate-100 flex justify-between items-center shadow-sm">
                 <div>
-                  <div className="font-bold text-slate-700 flex items-center">{i.sku} {!i.synced && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-orange-400" />}</div>
+                  <div className="font-bold text-slate-700">{i.sku} {!i.synced && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-orange-400 inline-block" />}</div>
                   <div className="text-[10px] text-slate-400 italic">{i.description || 'No description'}</div>
                 </div>
                 <button onClick={() => updateState('items', state.items.filter(x => x.id !== i.id))} className="text-red-400 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
@@ -288,7 +277,7 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
           <div className="space-y-2">
             {state.workTypes.map(w => (
               <div key={w.id} className="bg-white p-4 rounded-xl border border-slate-100 flex justify-between items-center shadow-sm">
-                <div className="font-bold text-slate-700 flex items-center">{w.name} {!w.synced && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-orange-400" />}</div>
+                <div className="font-bold text-slate-700">{w.name} {!w.synced && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-orange-400 inline-block" />}</div>
                 <button onClick={() => updateState('workTypes', state.workTypes.filter(x => x.id !== w.id))} className="text-red-400 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
               </div>
             ))}
@@ -305,7 +294,7 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
           <div className="space-y-2">
             {state.users.map(u => (
               <div key={u.id} className="bg-white p-4 rounded-xl border border-slate-100 flex justify-between items-center shadow-sm">
-                <div className="font-bold text-slate-700 flex items-center">{u.name} {!u.synced && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-orange-400" />}</div>
+                <div className="font-bold text-slate-700">{u.name} {!u.synced && <span className="ml-2 w-1.5 h-1.5 rounded-full bg-orange-400 inline-block" />}</div>
                 <button onClick={() => updateState('users', state.users.filter(x => x.id !== u.id))} className="text-red-400 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
               </div>
             ))}

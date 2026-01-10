@@ -4,13 +4,12 @@ import { loadData, saveData } from './services/storage';
 import { Header, TabBar } from './components/ui';
 import { initGapi, syncDataToSheets } from './services/sheets';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
-// Import page components to fix "Cannot find name" and JSX type errors
 import Masters from './pages/Masters';
 import Outward from './pages/Outward';
 import Inward from './pages/Inward';
 import Report from './pages/Report';
 
-const APP_VERSION = "2.7.0-mobile-auth-fix";
+const APP_VERSION = "2.8.0-auth-optimized";
 
 const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState('outward');
@@ -20,6 +19,14 @@ const App: React.FC = () => {
   const tokenClient = useRef<any>(null);
   
   const syncTargetRef = useRef<AppState>(state);
+
+  // Auto-init credentials if missing
+  useEffect(() => {
+    if (!localStorage.getItem('GOOGLE_CLIENT_ID')) {
+        localStorage.setItem('GOOGLE_CLIENT_ID', '1066501284390-o19fpc6g5voo2dahe5o9ct5esa5743ht.apps.googleusercontent.com');
+        localStorage.setItem('GOOGLE_CLIENT_SECRET', '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');
+    }
+  }, []);
 
   useEffect(() => {
     saveData(state);
@@ -71,19 +78,19 @@ const App: React.FC = () => {
       const google = (window as any).google;
       
       if (!google?.accounts?.oauth2) {
-        throw new Error("Google Identity Services script not loaded. Check your internet connection.");
+        throw new Error("Google Identity Services script not loaded.");
       }
 
       if (!tokenClient.current) {
         tokenClient.current = google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
+          client_id: clientId.trim(),
           scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
           callback: async (resp: any) => {
             if (resp.error) {
               console.error("OAuth Callback Error:", resp);
               let errorMsg = resp.error_description || resp.error;
               if (errorMsg === "idpiframe_initialization_failed") {
-                  errorMsg = "Origin Mismatch: Add this URL to Authorized JavaScript Origins in Google Console.";
+                  errorMsg = "Origin Mismatch: Verify authorized origins in Google Console.";
               }
               setAuthError(errorMsg);
               setIsSyncing(false);
@@ -104,8 +111,11 @@ const App: React.FC = () => {
       }
 
       if (tokenClient.current) {
-        // For mobile, prompt: 'select_account' is often more reliable than 'none' or empty
-        tokenClient.current.requestAccessToken({ prompt: forcePrompt ? 'select_account' : '' });
+        // Attempt re-use if forcePrompt is false. mobile chrome behaves better with prompt: '' (empty)
+        tokenClient.current.requestAccessToken({ 
+            prompt: forcePrompt ? 'select_account' : '',
+            hint: localStorage.getItem('last_user_email') || undefined
+        });
       } else {
         setIsSyncing(false);
       }
