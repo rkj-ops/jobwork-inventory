@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Vendor, Item, WorkType, AppState, OutwardEntry, InwardEntry } from '../types';
+import { Vendor, Item, WorkType, AppState, OutwardEntry, InwardEntry, formatDisplayDate } from '../types';
 import { Button, Input, Card } from '../components/ui';
 import { Trash2, FileDown, Upload, Settings, Database, Download, Lock, BarChart3 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
@@ -32,9 +32,7 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   };
 
   const handleDownloadReconReport = () => {
-    // Exact format requested (20 columns A-T):
-    // status(complete/pending/short qty completed) | vendor | sent date | recieved date | challan no. | work done | sku | qty sent | qty rec | short qty | combo qty sent | combo qty recieved | combo qty short | TW Sent | TW Received | short/excess weight | inward checked by | inward remarks | outward checked by | outward remarks
-    
+    // 20 Columns strictly ordered from A to T:
     const reportData = state.outwardEntries.map(o => {
         const ins = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
         const inQty = ins.reduce((s, i) => s + i.qty, 0);
@@ -55,14 +53,19 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
             statusStr = 'complete';
         }
 
-        const recvDatesStr = Array.from(new Set(ins.map(i => i.date.split('T')[0]))).sort().join('; ');
+        // Fix: Explicitly type the Set to string to avoid 'unknown' inference in map
+        const recvDatesStr = Array.from(new Set<string>(ins.map(i => i.date.split('T')[0])))
+            .sort()
+            .map(d => formatDisplayDate(d))
+            .join('; ');
+        
         const inwardCheckedBy = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
         const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
 
         return {
             'status(complete/pending/short qty completed)': statusStr,
             'vendor': vendor?.name || 'Unknown',
-            'sent date': o.date.split('T')[0],
+            'sent date': formatDisplayDate(o.date),
             'recieved date': recvDatesStr || '---',
             'challan no.': o.challanNo,
             'work done': work?.name || '',

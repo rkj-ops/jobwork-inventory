@@ -41,7 +41,7 @@ export interface OutwardEntry {
   remarks?: string;
   enteredBy?: string;
   checkedBy?: string;
-  status?: 'OPEN' | 'COMPLETED'; // New field for manual closure
+  status?: 'OPEN' | 'COMPLETED';
   synced?: boolean;
 }
 
@@ -86,4 +86,19 @@ export const SHEETS_CONFIG = {
 
 export const DRIVE_CONFIG = {
   folderId: "1YRTRbcjbj6RReN28fIXK0oanTwW_z8A0"
+};
+
+export const formatDisplayDate = (dateStr: string): string => {
+  if (!dateStr) return '---';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '---';
+    const day = d.getDate().toString().padStart(2, '0');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    return `${day}-${month}-${year}`;
+  } catch (e) {
+    return '---';
+  }
 };

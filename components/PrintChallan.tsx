@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppState, OutwardEntry } from '../types';
+import { AppState, OutwardEntry, formatDisplayDate } from '../types';
 import { X } from 'lucide-react';
 
 interface PrintChallanProps {
@@ -35,7 +35,7 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
              <p className="text-xs text-gray-500 uppercase">Work Type</p>
              <p className="text-xl font-bold uppercase">{work?.name}</p>
           </div>
-          <p><strong>Date:</strong> {new Date(entry.date).toLocaleDateString()}</p>
+          <p><strong>Date:</strong> {formatDisplayDate(entry.date)}</p>
         </div>
       </div>
 

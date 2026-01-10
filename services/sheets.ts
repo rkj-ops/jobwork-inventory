@@ -1,4 +1,4 @@
-import { SHEETS_CONFIG, DRIVE_CONFIG, AppState, Vendor, Item, WorkType, User, OutwardEntry, InwardEntry } from '../types';
+import { SHEETS_CONFIG, DRIVE_CONFIG, AppState, Vendor, Item, WorkType, User, OutwardEntry, InwardEntry, formatDisplayDate } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
 export const initGapi = async (apiKey: string) => {
@@ -80,7 +80,6 @@ const parseDate = (value: any): string => {
   } catch (e) { return new Date().toISOString(); }
 };
 
-// Simplified signature for more robust duplicate detection
 const getInwardSignature = (dateStr: string, vendor: string, outChallan: string, qty: number) => {
     const d = dateStr.split('T')[0];
     return `${d}|${vendor.trim().toLowerCase()}|${outChallan.trim().toLowerCase()}|${qty}`;
@@ -116,7 +115,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         getInwardSignature(r[0]||'', r[1]||'', r[2]||'', parseFloat(r[4]||0))
     ));
 
-    // NEW DATA SELECTION
     const unsyncedVendors = state.vendors.filter(e => !e.synced && !existingVendors.some(ev => ev.code === e.code));
     const unsyncedItems = state.items.filter(e => !e.synced && !existingItems.some(ei => ei.sku === e.sku));
     const unsyncedWorks = state.workTypes.filter(e => !e.synced && !existingWorks.some(ew => ew.name === e.name));
@@ -130,7 +128,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
          return !seenInwardSignatures.has(sig);
     });
 
-    // APPEND OPERATIONS
     if (unsyncedVendors.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.vendorSheetName}!A:B`, valueInputOption: "USER_ENTERED", resource: { values: unsyncedVendors.map(v => [v.name, v.code]) } });
     if (unsyncedItems.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.itemSheetName}!A:B`, valueInputOption: "USER_ENTERED", resource: { values: unsyncedItems.map(i => [i.sku, i.description]) } });
     if (unsyncedWorks.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.workSheetName}!A:A`, valueInputOption: "USER_ENTERED", resource: { values: unsyncedWorks.map(w => [w.name]) } });
@@ -140,7 +137,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     for (const e of validOutwardToUpload) {
       let pUrl = e.photoUrl || (e.photo ? await uploadImage(e.photo, `OUT_${e.challanNo}.jpg`, 'outward') : '');
       newOutwardRows.push([
-        e.date.split('T')[0], state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown',
+        formatDisplayDate(e.date), state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown',
         e.challanNo, state.items.find(i => i.id === e.skuId)?.sku || 'Unknown', 
         e.qty, e.comboQty || '', e.totalWeight, e.pendalWeight, e.materialWeight, 
         e.checkedBy || '', e.enteredBy || '', pUrl, 
@@ -155,7 +152,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       const out = state.outwardEntries.find(o => o.id === e.outwardChallanId);
       let pUrl = e.photoUrl || (e.photo ? await uploadImage(e.photo, `IN_${out?.challanNo || 'UNK'}.jpg`, 'inward') : '');
       newInwardRows.push([
-        e.date.split('T')[0], state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown',
+        formatDisplayDate(e.date), state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown',
         out ? out.challanNo : '---', state.items.find(i => i.id === e.skuId)?.sku || 'Unknown', 
         e.qty, e.comboQty || '', e.totalWeight, e.pendalWeight, e.materialWeight,
         e.checkedBy || '', e.enteredBy || '', pUrl, e.remarks || '', timestamp
@@ -163,7 +160,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     }
     if (newInwardRows.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.inwardSheetName}!A:N`, valueInputOption: "USER_ENTERED", resource: { values: newInwardRows } });
 
-    // REFRESH LOCAL STATE FROM CLOUD
     const allVendors = [...existingVendors, ...unsyncedVendors.map(v => ({...v, synced: true}))];
     const allItems = [...existingItems, ...unsyncedItems.map(i => ({...i, synced: true}))];
     const allWorks = [...existingWorks, ...unsyncedWorks.map(w => ({...w, synced: true}))];
@@ -187,7 +183,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], remarks: r[12], synced: true
     }));
 
-    // UPDATE RECONCILIATION SUMMARY SHEET (20 Columns format A-T)
     const reconRows = finalOutward.map(o => {
         const ins = finalInward.filter(i => i.outwardChallanId === o.id);
         const inQty = ins.reduce((s, i) => s + i.qty, 0);
@@ -204,32 +199,36 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
             statusStr = 'complete';
         }
 
-        const recvDatesStr = Array.from(new Set(ins.map(i => i.date.split('T')[0]))).sort().join('; ');
+        const recvDatesStr = Array.from(new Set(ins.map(i => i.date.split('T')[0])))
+            .sort()
+            .map(d => formatDisplayDate(d))
+            .join('; ');
+
         const inwardChecked = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
         const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
 
-        // COLUMNS A-T (Strict Header Order)
+        // COLUMNS A-T Strictly
         return [
-            statusStr, // status(complete/pending/short qty completed)
-            allVendors.find(v => v.id === o.vendorId)?.name || 'Unknown', // vendor
-            o.date.split('T')[0], // sent date
-            recvDatesStr || '---', // recieved date
-            o.challanNo, // challan no.
-            allWorks.find(w => w.id === o.workId)?.name || '', // work done
-            allItems.find(i => i.id === o.skuId)?.sku || 'Unknown', // sku
-            o.qty, // qty sent
-            inQty, // qty rec
-            Math.max(0, o.qty - inQty), // short qty
-            o.comboQty || 0, // combo qty sent
-            inCombo, // combo qty recieved
-            Math.max(0, (o.comboQty || 0) - inCombo), // combo qty short
-            o.totalWeight, // TW Sent
-            twRec, // TW Received
-            (o.totalWeight - twRec).toFixed(3), // short/excess weight
-            inwardChecked || '---', // inward checked by
-            inwardRemarks || '---', // inward remarks
-            o.checkedBy || '---', // outward checked by
-            o.remarks || '---' // outward remarks
+            statusStr,
+            allVendors.find(v => v.id === o.vendorId)?.name || 'Unknown',
+            formatDisplayDate(o.date),
+            recvDatesStr || '---',
+            o.challanNo,
+            allWorks.find(w => w.id === o.workId)?.name || '',
+            allItems.find(i => i.id === o.skuId)?.sku || 'Unknown',
+            o.qty,
+            inQty,
+            Math.max(0, o.qty - inQty),
+            o.comboQty || 0,
+            inCombo,
+            Math.max(0, (o.comboQty || 0) - inCombo),
+            o.totalWeight,
+            twRec,
+            (o.totalWeight - twRec).toFixed(3),
+            inwardChecked || '---',
+            inwardRemarks || '---',
+            o.checkedBy || '---',
+            o.remarks || '---'
         ];
     });
     

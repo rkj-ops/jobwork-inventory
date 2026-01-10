@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef } from 'react';
-import { AppState, OutwardEntry, InwardEntry } from '../types';
+import { AppState, OutwardEntry, InwardEntry, formatDisplayDate } from '../types';
 import { Card, Button } from '../components/ui';
 import { syncDataToSheets, initGapi } from '../services/sheets';
 import { ChevronDown, ChevronUp, Trash2, Printer, CheckCircle, Search, Info, Calendar, ScanBarcode } from 'lucide-react';
@@ -106,7 +106,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
             format: "CODE128",
             displayValue: false,
             margin: 0,
-            height: 50,
+            height: 40,
             width: 2
         });
         const barcodeData = canvas.toDataURL("image/png");
@@ -116,11 +116,21 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                 <html>
                 <head><style>
                     @page { size: 50mm 25mm; margin: 0; }
-                    body { margin: 0; padding: 0; width: 50mm; height: 25mm; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; font-family: sans-serif; overflow: hidden; }
-                    .top-half { height: 12.5mm; width: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-                    .bottom-half { height: 12.5mm; width: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-                    .sku-text { font-weight: bold; font-size: 11pt; text-align: center; white-space: nowrap; max-width: 48mm; }
-                    .barcode-img { height: 11mm; max-width: 48mm; object-fit: contain; }
+                    body { margin: 0; padding: 0; width: 50mm; height: 25mm; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; font-family: sans-serif; overflow: hidden; background: white; }
+                    .top-half { height: 12.5mm; width: 50mm; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 0 2mm; box-sizing: border-box; }
+                    .bottom-half { height: 12.5mm; width: 50mm; display: flex; align-items: center; justify-content: center; overflow: hidden; padding-bottom: 1mm; box-sizing: border-box; }
+                    .sku-text { 
+                        font-weight: bold; 
+                        font-size: 10pt; 
+                        text-align: center; 
+                        word-break: break-all;
+                        display: -webkit-box;
+                        -webkit-line-clamp: 2;
+                        -webkit-box-orient: vertical;
+                        overflow: hidden;
+                        line-height: 1.1;
+                    }
+                    .barcode-img { height: 11mm; max-width: 46mm; object-fit: contain; }
                 </style></head>
                 <body>
                     <div class="top-half">
@@ -129,7 +139,12 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                     <div class="bottom-half">
                         <img src="${barcodeData}" class="barcode-img" />
                     </div>
-                    <script>window.print(); window.close();</script>
+                    <script>
+                        window.onload = function() {
+                            window.print();
+                            window.close();
+                        };
+                    </script>
                 </body>
                 </html>
             `);
@@ -217,7 +232,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                         <div className="grid grid-cols-2 gap-y-2">
                           <p><strong>Vendor:</strong> {detailView.vendorName}</p>
                           <p><strong>Work:</strong> {detailView.workName}</p>
-                          <p><strong>Sent Date:</strong> {new Date(detailView.date).toLocaleDateString()}</p>
+                          <p><strong>Sent Date:</strong> {formatDisplayDate(detailView.date)}</p>
                           <p><strong>Status:</strong> <span className={`font-bold ${detailView.status === 'COMPLETED' ? 'text-green-600' : 'text-orange-600'}`}>{detailView.status || 'OPEN'}</span></p>
                           <p><strong>Sent Qty:</strong> {detailView.qty} (Combo: {detailView.comboQty ?? 0})</p>
                           <p><strong>Recv Qty:</strong> {detailView.inQty} (Combo: {detailView.inComboQty})</p>
@@ -226,7 +241,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                         </div>
                         {detailView.recvDates.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-blue-200">
-                             <p><strong>Received Dates:</strong> {detailView.recvDates.map(d => new Date(d).toLocaleDateString()).join(', ')}</p>
+                             <p><strong>Received Dates:</strong> {detailView.recvDates.map(d => formatDisplayDate(d)).join(', ')}</p>
                           </div>
                         )}
                         {detailView.status === 'COMPLETED' && (detailView.shortQty > 0 || detailView.shortComboQty > 0) && (
@@ -251,7 +266,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                                 <tbody>
                                     {detailView.inwards.map(i => (
                                         <tr key={i.id} className="border-b last:border-0 hover:bg-slate-50">
-                                            <td className="p-2">{new Date(i.date).toLocaleDateString()}</td>
+                                            <td className="p-2">{formatDisplayDate(i.date)}</td>
                                             <td className="p-2 text-right font-bold">{i.qty}</td>
                                             <td className="p-2 text-right">{i.comboQty ?? 0}</td>
                                             <td className="p-2 text-slate-500 text-[10px]">{i.enteredBy}</td>
@@ -325,7 +340,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                     <div className="flex justify-between items-start mb-3">
                         <div>
                             <div className="font-black text-slate-800 text-lg leading-tight uppercase tracking-tight">{r.vendorName}</div>
-                            <div className="text-xs text-slate-400 font-mono mt-0.5">CH#{r.challanNo} • {new Date(r.date).toLocaleDateString()}</div>
+                            <div className="text-xs text-slate-400 font-mono mt-0.5">CH#{r.challanNo} • {formatDisplayDate(r.date)}</div>
                         </div>
                         <div className="flex gap-1">
                           <button onClick={(e) => { e.stopPropagation(); printLabel(r.itemSku); }} className="text-blue-500 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><ScanBarcode size={18}/></button>
@@ -347,7 +362,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState }) => {
                             {r.recvDates.length > 0 && (
                                 <div className="flex items-center text-[10px] text-blue-600 mt-1">
                                     <Calendar size={10} className="mr-1"/> 
-                                    <span className="truncate max-w-[150px]">{r.recvDates.map(d => new Date(d).toLocaleDateString()).join(', ')}</span>
+                                    <span className="truncate max-w-[150px]">{r.recvDates.map(d => formatDisplayDate(d)).join(', ')}</span>
                                 </div>
                             )}
                         </div>
