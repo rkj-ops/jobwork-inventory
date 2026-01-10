@@ -51,28 +51,53 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
   try {
     if (!base64String || !base64String.includes(',')) return null;
     const gapi = (window as any).gapi;
-    const mimeMatch = base64String.match(/data:(.*);base64/);
+    
+    // Extract mime type and base64 content safely
+    const parts = base64String.split(',');
+    const mimeMatch = parts[0].match(/data:(.*);base64/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-    const byteString = atob(base64String.split(',')[1]);
+    const base64Content = parts[1];
+    
+    // Hardened binary conversion for mobile
+    const byteString = atob(base64Content);
     const ab = new ArrayBuffer(byteString.length);
     const ia = new Uint8Array(ab);
-    for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+    for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+    }
     const blob = new Blob([ab], { type: mimeType });
+    
     const folderId = await getOrCreateFolder(targetFolder === 'outward' ? 'outward images' : 'inward images');
     const metadata = { name: fileName, parents: folderId ? [folderId] : [DRIVE_CONFIG.folderId] };
+    
     const accessToken = gapi.client.getToken()?.access_token;
-    if (!accessToken) throw new Error("No Access Token");
+    if (!accessToken) {
+        console.error("Auth Token Missing for image upload");
+        return null;
+    }
+
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     form.append('file', blob);
+
     const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
       method: 'POST',
       headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
       body: form
     });
+    
+    if (!response.ok) {
+        const errText = await response.text();
+        console.error("Drive upload failed:", errText);
+        return null;
+    }
+
     const data = await response.json();
     return data.webViewLink || null;
-  } catch (error) { return null; }
+  } catch (error) { 
+    console.error("Critical Upload Error:", error);
+    return null; 
+  }
 };
 
 const parseDate = (value: any): string => {
@@ -90,7 +115,8 @@ const getInwardSignature = (dateStr: string, vendor: string, outChallan: string,
 
 export const syncDataToSheets = async (state: AppState, onUpdateState: (newState: AppState) => void) => {
   const gapi = (window as any).gapi;
-  if (!gapi.client.getToken()) return { success: false, message: "Authorization required. Click Sync manually." };
+  const accessToken = gapi.client.getToken()?.access_token;
+  if (!accessToken) return { success: false, message: "Authorization required. Click Sync manually." };
 
   try {
     const timestamp = new Date().toLocaleString();
@@ -140,7 +166,12 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
 
     const newOutwardRows: any[] = [];
     for (const e of validOutwardToUpload) {
-      let pUrl = e.photoUrl || (e.photo ? await uploadImage(e.photo, `OUT_${e.challanNo}.jpg`, 'outward') : '');
+      // Prioritize cloud upload for photos
+      let pUrl = e.photoUrl;
+      if (!pUrl && e.photo) {
+          pUrl = await uploadImage(e.photo, `OUT_${e.challanNo}.jpg`, 'outward') || '';
+      }
+      
       newOutwardRows.push([
         formatDisplayDate(e.date), state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown',
         e.challanNo, state.items.find(i => i.id === e.skuId)?.sku || 'Unknown', 
@@ -155,7 +186,11 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const newInwardRows: any[] = [];
     for (const e of validInwardToUpload) {
       const out = state.outwardEntries.find(o => o.id === e.outwardChallanId);
-      let pUrl = e.photoUrl || (e.photo ? await uploadImage(e.photo, `IN_${out?.challanNo || 'UNK'}.jpg`, 'inward') : '');
+      let pUrl = e.photoUrl;
+      if (!pUrl && e.photo) {
+          pUrl = await uploadImage(e.photo, `IN_${out?.challanNo || 'UNK'}.jpg`, 'inward') || '';
+      }
+      
       newInwardRows.push([
         formatDisplayDate(e.date), state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown',
         out ? out.challanNo : '---', state.items.find(i => i.id === e.skuId)?.sku || 'Unknown', 
@@ -174,7 +209,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const finalOutward: OutwardEntry[] = [...existingOutwardRows, ...newOutwardRows].map((r:any) => {
       const challanNo = r[2];
       const localMatch = state.outwardEntries.find(o => o.challanNo === challanNo);
-      // Status preservation logic
       const statusFromSheet = r[14] as 'OPEN' | 'COMPLETED';
       const effectiveStatus = localMatch?.status === 'COMPLETED' ? 'COMPLETED' : statusFromSheet;
 
@@ -207,8 +241,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       };
     });
 
-    // RECONCILIATION SUMMARY (Updated to include Inward Entered/Checked)
-    // 22 Columns strictly following logical sequence
     const reconRows = finalOutward.map(o => {
         const ins = finalInward.filter(i => i.outwardChallanId === o.id);
         const inQty = ins.reduce((sum, i) => sum + i.qty, 0);
@@ -250,16 +282,15 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
             twRec,
             (o.totalWeight - twRec).toFixed(3),
             inwardChecked || '---',
-            inwardEntered || '---', // New Column
+            inwardEntered || '---',
             inwardRemarks || '---',
             o.checkedBy || '---',
-            o.enteredBy || '---', // New Column
+            o.enteredBy || '---',
             o.remarks || '---'
         ];
     });
     
     if (reconRows.length) {
-        // Updated range to V (22 columns)
         await gapi.client.sheets.spreadsheets.values.update({
             spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:V${reconRows.length + 1}`,
             valueInputOption: "USER_ENTERED", resource: { values: reconRows }

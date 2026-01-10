@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppState, OutwardEntry, Item } from '../types';
 import { Button, Input, Select, Card } from '../components/ui';
-import { Camera, Printer, Save, Maximize2, AlertCircle, X } from 'lucide-react';
+import { Camera, Printer, Save, Maximize2, AlertCircle, Upload } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import PrintChallan from '../components/PrintChallan';
 
@@ -54,9 +54,15 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
 
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      // Basic size check for mobile UX
+      if (file.size > 10 * 1024 * 1024) {
+          alert("Image is too large. Please select a photo smaller than 10MB.");
+          return;
+      }
       const reader = new FileReader();
       reader.onload = (ev) => setFormData(prev => ({ ...prev, photo: ev.target?.result as string }));
-      reader.readAsDataURL(e.target.files[0]);
+      reader.readAsDataURL(file);
     }
   };
 
@@ -184,19 +190,24 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
         </div>
 
         <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 mb-1">Photo</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1 font-bold">Photo Attachment</label>
           <div className="flex gap-4 items-center">
-              <label className="flex-1 flex items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50">
-                 <Camera className="mr-2 text-slate-400"/> {formData.photo ? 'Retake' : 'Capture'}
-                 <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
+              <label className="flex-1 flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 border-slate-300 transition-colors">
+                 <div className="flex gap-2 mb-1">
+                   <Camera className="text-slate-400" size={20}/>
+                   <Upload className="text-slate-400" size={20}/>
+                 </div>
+                 <span className="text-xs font-bold text-slate-500 uppercase">{formData.photo ? 'Change Photo' : 'Capture or Upload'}</span>
+                 <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
               </label>
               {formData.photo && (
                   <div className="relative group cursor-pointer" onClick={() => setPreviewImage(formData.photo)}>
-                    <img src={formData.photo} className="h-16 w-16 rounded-lg border object-cover" />
-                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 flex items-center justify-center rounded-lg"><Maximize2 className="text-white opacity-0 group-hover:opacity-100" size={16}/></div>
+                    <img src={formData.photo} className="h-16 w-16 rounded-lg border object-cover shadow-sm" />
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 flex items-center justify-center rounded-lg transition-opacity"><Maximize2 className="text-white opacity-0 group-hover:opacity-100" size={16}/></div>
                   </div>
               )}
           </div>
+          <p className="text-[10px] text-slate-400 mt-1 italic">Note: Max size 10MB per image.</p>
         </div>
 
         <Input label="Remarks" value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} />
