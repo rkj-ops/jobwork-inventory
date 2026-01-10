@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Vendor, Item, WorkType, AppState, OutwardEntry, InwardEntry, formatDisplayDate } from '../types';
 import { Button, Input, Card } from '../components/ui';
-import { Trash2, FileDown, Upload, Settings, Database, Download, Lock, BarChart3 } from 'lucide-react';
+import { Trash2, FileDown, Upload, Settings, Database, Download, Lock, BarChart3, Globe } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { exportToCSV, parseCSV, downloadTemplate } from '../services/csv';
 
@@ -23,6 +23,8 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   const [apiKey, setApiKey] = useState(localStorage.getItem('GOOGLE_API_KEY') || '');
   const [clientId, setClientId] = useState(localStorage.getItem('GOOGLE_CLIENT_ID') || '');
 
+  const currentOrigin = window.location.origin;
+
   const handleLogin = () => {
     if (login.user === 'ADMIN' && login.pass === 'Rajkamal@1') {
         setIsAuthenticated(true);
@@ -32,7 +34,6 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
   };
 
   const handleDownloadReconReport = () => {
-    // 20 Columns strictly ordered from A to T:
     const reportData = state.outwardEntries.map(o => {
         const ins = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
         const inQty = ins.reduce((s, i) => s + i.qty, 0);
@@ -53,7 +54,6 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
             statusStr = 'complete';
         }
 
-        // Fix: Explicitly type the Set to string to avoid 'unknown' inference in map
         const recvDatesStr = Array.from(new Set<string>(ins.map(i => i.date.split('T')[0])))
             .sort()
             .map(d => formatDisplayDate(d))
@@ -212,6 +212,20 @@ const Masters: React.FC<MastersProps> = ({ state, updateState }) => {
       {activeSection === 'config' && (
         <div className="px-4">
           <Card title="Cloud Infrastructure">
+            <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl text-[11px] text-orange-800 space-y-2">
+                <div className="flex items-center font-bold uppercase"><Globe size={14} className="mr-2"/> Mobile Auth Setup</div>
+                <p>If you see "OAuth Client Not Found" or origin errors on mobile:</p>
+                <ol className="list-decimal ml-4 space-y-1">
+                    <li>Open <a href="https://console.cloud.google.com/" target="_blank" className="font-bold underline">Google Cloud Console</a>.</li>
+                    <li>Go to <strong>APIs & Services</strong> &gt; <strong>Credentials</strong>.</li>
+                    <li>Edit your <strong>Web Application</strong> client.</li>
+                    <li>Add this exact URL to <strong>Authorized JavaScript Origins</strong>:</li>
+                </ol>
+                <div className="mt-2 p-2 bg-white border border-orange-300 rounded font-mono text-[10px] select-all break-all">
+                    {currentOrigin}
+                </div>
+            </div>
+            
             <Input label="Google Client ID" value={clientId} onChange={e => setClientId(e.target.value)} />
             <Input label="Google API Key" value={apiKey} onChange={e => setApiKey(e.target.value)} />
             <Button onClick={saveConfig} className="mt-2"><Settings size={18} className="mr-2"/> Save Credentials</Button>
