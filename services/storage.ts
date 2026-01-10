@@ -25,14 +25,26 @@ export const loadData = (): AppState => {
   return initialData;
 };
 
+/**
+ * Enhanced saveData that filters out raw base64 photos before persisting to localStorage.
+ * Base64 images are too large for the 5MB localStorage limit. 
+ * They are kept in memory state for syncing, but not saved to disk.
+ */
 export const saveData = (data: AppState) => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    // Deep clone and clean the data for storage
+    const storageData = {
+      ...data,
+      outwardEntries: data.outwardEntries.map(({ photo, ...rest }) => rest),
+      inwardEntries: data.inwardEntries.map(({ photo, ...rest }) => rest)
+    };
+    
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(storageData));
   } catch (e) {
-    console.error("Storage Error: Quota Exceeded or Invalid Data", e);
-    // Alert the user only if it's likely a quota error (usually DOMException code 22)
+    console.error("Storage Error:", e);
     if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.code === 22)) {
-        alert("⚠️ Local Storage Full! Your images are too large to save locally.\n\nPlease click 'Sync' to upload data to Google Sheets and clear local space.");
+        // This shouldn't happen now with the photo filtering, but kept as a fallback
+        console.warn("Local storage quota exceeded even after filtering.");
     }
   }
 };

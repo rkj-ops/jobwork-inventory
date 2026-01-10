@@ -1,6 +1,41 @@
 import { SHEETS_CONFIG, DRIVE_CONFIG, AppState, Vendor, Item, WorkType, User, OutwardEntry, InwardEntry, formatDisplayDate } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
+/**
+ * Resizes and compresses an image base64 string before upload.
+ * Helps prevent memory issues on mobile and ensures faster Drive uploads.
+ */
+const compressImage = async (base64: string, maxWidth = 1200, quality = 0.7): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height *= maxWidth / width;
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxWidth) {
+          width *= maxWidth / height;
+          height = maxWidth;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(base64); // Fallback to original if compression fails
+  });
+};
+
 export const initGapi = async (apiKey: string) => {
   return new Promise<void>((resolve, reject) => {
     const gapi = (window as any).gapi;
@@ -50,15 +85,16 @@ const getOrCreateFolder = async (folderName: string): Promise<string | null> => 
 const uploadImage = async (base64String: string, fileName: string, targetFolder: 'outward' | 'inward'): Promise<string | null> => {
   try {
     if (!base64String || !base64String.includes(',')) return null;
-    const gapi = (window as any).gapi;
     
-    // Extract mime type and base64 content safely
-    const parts = base64String.split(',');
+    // Step 1: Compress for mobile efficiency
+    const compressedBase64 = await compressImage(base64String);
+    
+    const gapi = (window as any).gapi;
+    const parts = compressedBase64.split(',');
     const mimeMatch = parts[0].match(/data:(.*);base64/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
     const base64Content = parts[1];
     
-    // Hardened binary conversion for mobile
     const byteString = atob(base64Content);
     const ab = new ArrayBuffer(byteString.length);
     const ia = new Uint8Array(ab);
@@ -71,10 +107,7 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
     const metadata = { name: fileName, parents: folderId ? [folderId] : [DRIVE_CONFIG.folderId] };
     
     const accessToken = gapi.client.getToken()?.access_token;
-    if (!accessToken) {
-        console.error("Auth Token Missing for image upload");
-        return null;
-    }
+    if (!accessToken) return null;
 
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -86,16 +119,12 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
       body: form
     });
     
-    if (!response.ok) {
-        const errText = await response.text();
-        console.error("Drive upload failed:", errText);
-        return null;
-    }
+    if (!response.ok) return null;
 
     const data = await response.json();
     return data.webViewLink || null;
   } catch (error) { 
-    console.error("Critical Upload Error:", error);
+    console.error("Drive upload failed:", error);
     return null; 
   }
 };
@@ -166,7 +195,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
 
     const newOutwardRows: any[] = [];
     for (const e of validOutwardToUpload) {
-      // Prioritize cloud upload for photos
       let pUrl = e.photoUrl;
       if (!pUrl && e.photo) {
           pUrl = await uploadImage(e.photo, `OUT_${e.challanNo}.jpg`, 'outward') || '';

@@ -55,13 +55,11 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      // Basic size check for mobile UX
-      if (file.size > 10 * 1024 * 1024) {
-          alert("Image is too large. Please select a photo smaller than 10MB.");
-          return;
-      }
       const reader = new FileReader();
-      reader.onload = (ev) => setFormData(prev => ({ ...prev, photo: ev.target?.result as string }));
+      reader.onload = (ev) => {
+        const base64 = ev.target?.result as string;
+        setFormData(prev => ({ ...prev, photo: base64 }));
+      };
       reader.readAsDataURL(file);
     }
   };
@@ -207,7 +205,6 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
                   </div>
               )}
           </div>
-          <p className="text-[10px] text-slate-400 mt-1 italic">Note: Max size 10MB per image.</p>
         </div>
 
         <Input label="Remarks" value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} />
