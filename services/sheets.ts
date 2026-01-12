@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
  * Highly optimized image compression for mobile devices.
  * Reduces image size to ~150-300KB to ensure successful upload over mobile data.
  */
-const compressImage = async (base64: string, maxWidth = 1024, quality = 0.6): Promise<string> => {
+export const compressImage = async (base64: string, maxWidth = 1024, quality = 0.6): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.src = base64;
@@ -30,7 +30,6 @@ const compressImage = async (base64: string, maxWidth = 1024, quality = 0.6): Pr
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        // Use better image smoothing for compression
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, width, height);
@@ -48,7 +47,6 @@ const compressImage = async (base64: string, maxWidth = 1024, quality = 0.6): Pr
 
 /**
  * Efficiently converts a Data URL to a Blob using the browser's built-in fetch.
- * This is more memory-efficient than manual atob/Uint8Array loops on mobile.
  */
 const dataURLToBlob = async (dataUrl: string): Promise<Blob> => {
   const res = await fetch(dataUrl);
@@ -108,10 +106,7 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
   try {
     if (!base64String || !base64String.includes(',')) return null;
     
-    // Step 1: Compress aggressively for mobile
     const compressedBase64 = await compressImage(base64String);
-    
-    // Step 2: Convert to Blob efficiently
     const blob = await dataURLToBlob(compressedBase64);
     
     const gapi = (window as any).gapi;
@@ -119,10 +114,7 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
     const metadata = { name: fileName, parents: folderId ? [folderId] : [DRIVE_CONFIG.folderId] };
     
     const accessToken = gapi.client.getToken()?.access_token;
-    if (!accessToken) {
-      console.error("No access token found for image upload");
-      return null;
-    }
+    if (!accessToken) return null;
 
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -134,11 +126,7 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
       body: form
     });
     
-    if (!response.ok) {
-      const errorMsg = await response.text();
-      console.error("Drive upload error response:", errorMsg);
-      return null;
-    }
+    if (!response.ok) return null;
 
     const data = await response.json();
     return data.webViewLink || null;
@@ -161,7 +149,6 @@ const getInwardSignature = (dateStr: string, vendor: string, outChallan: string,
     return `${d}|${vendor.trim().toLowerCase()}|${outChallan.trim().toLowerCase()}|${qty}`;
 };
 
-// Helper to wait
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const syncDataToSheets = async (state: AppState, onUpdateState: (newState: AppState) => void) => {
@@ -196,7 +183,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         getInwardSignature(r[0]||'', r[1]||'', r[2]||'', parseFloat(r[4]||0))
     ));
 
-    // DATA PUSH
     const unsyncedVendors = state.vendors.filter(e => !e.synced && !existingVendors.some(ev => ev.code === e.code));
     const unsyncedItems = state.items.filter(e => !e.synced && !existingItems.some(ei => ei.sku === e.sku));
     const unsyncedWorks = state.workTypes.filter(e => !e.synced && !existingWorks.some(ew => ew.name === e.name));
@@ -220,7 +206,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       let pUrl = e.photoUrl;
       if (!pUrl && e.photo) {
           pUrl = await uploadImage(e.photo, `OUT_${e.challanNo}.jpg`, 'outward') || '';
-          // Small delay to let mobile CPU/Network breathe between uploads
           if (validOutwardToUpload.length > 1) await delay(400);
       }
       
@@ -253,7 +238,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     }
     if (newInwardRows.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.inwardSheetName}!A:N`, valueInputOption: "USER_ENTERED", resource: { values: newInwardRows } });
 
-    // MERGE & STATE RECOVERY
     const allVendors = [...existingVendors, ...unsyncedVendors.map(v => ({...v, synced: true}))];
     const allItems = [...existingItems, ...unsyncedItems.map(i => ({...i, synced: true}))];
     const allWorks = [...existingWorks, ...unsyncedWorks.map(w => ({...w, synced: true}))];

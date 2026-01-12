@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Search, Plus, X } from 'lucide-react';
 
 export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'outline' }> = ({ className = '', variant = 'primary', ...props }) => {
   const baseStyle = "px-6 py-3 rounded-xl font-bold transition-all active:scale-95 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed w-full shadow-sm";
@@ -34,6 +35,89 @@ export const Card: React.FC<{ children: React.ReactNode; title?: string; classNa
     {children}
   </div>
 );
+
+export const SearchableList: React.FC<{
+  label: string;
+  items: { id: string; label: string; sublabel?: string }[];
+  placeholder?: string;
+  onSelect: (id: string) => void;
+  onAddNew?: (search: string) => void;
+  value?: string;
+}> = ({ label, items, placeholder, onSelect, onAddNew, value }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const selectedItem = items.find(i => i.id === value);
+  const filteredItems = items.filter(i => 
+    i.label.toLowerCase().includes(search.toLowerCase()) || 
+    i.sublabel?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="mb-4">
+      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5 ml-1">{label}</label>
+      <div 
+        onClick={() => setIsOpen(true)}
+        className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition-all flex justify-between items-center"
+      >
+        <span className={selectedItem ? "text-slate-800 font-bold" : "text-slate-400"}>
+          {selectedItem ? selectedItem.label : (placeholder || 'Select...')}
+        </span>
+        <Search size={18} className="text-slate-400" />
+      </div>
+
+      {isOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h3 className="font-bold text-slate-700">Search {label}</h3>
+              <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-3 border-b">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 text-slate-400" size={18} />
+                <input 
+                  autoFocus
+                  className="w-full pl-10 p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-100"
+                  placeholder={`Type to search ${label.toLowerCase()}...`}
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2">
+              {filteredItems.length === 0 ? (
+                <div className="text-center py-10">
+                   <p className="text-slate-400 italic mb-4">No results for "{search}"</p>
+                   {onAddNew && (
+                      <Button variant="outline" onClick={() => { onAddNew(search); setIsOpen(false); }} className="w-auto mx-auto border-blue-200 text-blue-600">
+                         <Plus size={16} className="mr-2"/> Add "{search}" as new
+                      </Button>
+                   )}
+                </div>
+              ) : (
+                filteredItems.map(item => (
+                  <div 
+                    key={item.id}
+                    onClick={() => { onSelect(item.id); setIsOpen(false); }}
+                    className={`p-3.5 mb-1 rounded-xl cursor-pointer transition-colors ${value === item.id ? 'bg-blue-600 text-white' : 'hover:bg-slate-50'}`}
+                  >
+                    <div className="font-bold">{item.label}</div>
+                    {item.sublabel && <div className={`text-[10px] uppercase font-black ${value === item.id ? 'text-blue-100' : 'text-slate-400'}`}>{item.sublabel}</div>}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const TabBar: React.FC<{ currentTab: string; setTab: (t: string) => void }> = ({ currentTab, setTab }) => {
   const tabs = [

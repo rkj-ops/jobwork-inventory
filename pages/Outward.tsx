@@ -1,9 +1,12 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { AppState, OutwardEntry, Item } from '../types';
-import { Button, Input, Select, Card } from '../components/ui';
-import { Camera, Printer, Save, Maximize2, AlertCircle, Upload } from 'lucide-react';
+import { Button, Input, Select, Card, SearchableList } from '../components/ui';
+// Add RefreshCw to the imports from lucide-react
+import { Camera, Printer, Save, Maximize2, AlertCircle, Upload, RefreshCw } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import PrintChallan from '../components/PrintChallan';
+import { compressImage } from '../services/sheets';
 
 interface OutwardProps {
   state: AppState;
@@ -29,10 +32,11 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
     checkedBy: ''
   });
 
-  const [skuInput, setSkuInput] = useState('');
+  const [skuId, setSkuId] = useState('');
   const [lastSaved, setLastSaved] = useState<OutwardEntry | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
 
   useEffect(() => {
     const mat = (parseFloat(formData.totalWeight) || 0) - (parseFloat(formData.pendalWeight) || 0);
@@ -54,18 +58,35 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
 
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
+      setIsProcessingImage(true);
       const file = e.target.files[0];
       const reader = new FileReader();
-      reader.onload = (ev) => {
-        const base64 = ev.target?.result as string;
-        setFormData(prev => ({ ...prev, photo: base64 }));
+      reader.onload = async (ev) => {
+        const rawBase64 = ev.target?.result as string;
+        try {
+          // IMMEDIATE COMPRESSION for iPhone performance and memory
+          const compressed = await compressImage(rawBase64, 800, 0.7);
+          setFormData(prev => ({ ...prev, photo: compressed }));
+        } catch (err) {
+          setFormData(prev => ({ ...prev, photo: rawBase64 }));
+        } finally {
+          setIsProcessingImage(false);
+        }
       };
+      reader.onerror = () => setIsProcessingImage(false);
       reader.readAsDataURL(file);
     }
   };
 
+  const handleAddNewSku = (skuName: string) => {
+    if (!skuName.trim()) return;
+    const newItem: Item = { id: uuidv4(), sku: skuName.trim().toUpperCase(), description: 'Auto', synced: false };
+    onAddItem(newItem);
+    setSkuId(newItem.id);
+  };
+
   const handleSubmit = () => {
-    if (!formData.vendorId || !skuInput || !formData.qty) {
+    if (!formData.vendorId || !skuId || !formData.qty) {
       alert("Please fill required fields (Vendor, SKU, Qty)");
       return;
     }
@@ -76,24 +97,13 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
         return;
     }
 
-    let finalSkuId = '';
-    const existingItem = state.items.find(i => i.sku.toLowerCase() === skuInput.toLowerCase());
-
-    if (existingItem) {
-      finalSkuId = existingItem.id;
-    } else {
-      const newItem: Item = { id: uuidv4(), sku: skuInput.toUpperCase(), description: 'Auto', synced: false };
-      onAddItem(newItem);
-      finalSkuId = newItem.id;
-    }
-
     const dateToSave = formData.date ? new Date(formData.date).toISOString() : new Date().toISOString();
 
     const newEntry: OutwardEntry = {
       id: uuidv4(),
       ...formData,
       challanNo: challanPreview,
-      skuId: finalSkuId,
+      skuId: skuId,
       qty: parseFloat(formData.qty),
       comboQty: parseFloat(formData.comboQty) || 0,
       totalWeight: parseFloat(formData.totalWeight) || 0,
@@ -111,13 +121,16 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
       date: today, vendorId: '', qty: '', comboQty: '', totalWeight: '', pendalWeight: '', materialWeight: '',
       workId: '', remarks: '', photo: '', enteredBy: '', checkedBy: ''
     });
-    setSkuInput('');
+    setSkuId('');
   };
 
   const handlePrint = () => {
     setIsPrinting(true);
     setTimeout(() => { window.print(); }, 100);
   };
+
+  const vendorOptions = state.vendors.map(v => ({ id: v.id, label: v.name, sublabel: v.code }));
+  const skuOptions = state.items.map(i => ({ id: i.id, label: i.sku, sublabel: i.description }));
 
   if (isPrinting && lastSaved) return <PrintChallan entry={lastSaved} state={state} onClose={() => setIsPrinting(false)} />;
 
@@ -126,16 +139,16 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
   return (
     <div className="p-4 pb-24 max-w-xl mx-auto">
       {previewImage && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}>
+        <div className="fixed inset-0 z-[110] bg-black/95 flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}>
            <img src={previewImage} className="max-w-full max-h-full rounded" />
         </div>
       )}
 
       {lastSaved && (
-        <div className="mb-4 bg-green-50 p-4 rounded-xl border border-green-200 flex justify-between items-center">
+        <div className="mb-4 bg-green-50 p-4 rounded-xl border border-green-200 flex justify-between items-center animate-in fade-in slide-in-from-top duration-300">
           <span className="text-green-700 font-bold">Challan {lastSaved.challanNo} Saved!</span>
           <div>
-            <button onClick={handlePrint} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold"><Printer size={16} /></button>
+            <button onClick={handlePrint} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold active:scale-95 transition-transform"><Printer size={16} /></button>
           </div>
         </div>
       )}
@@ -145,20 +158,26 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
            <Input label="Date" type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
            <div className="mb-4">
              <label className="block text-sm font-medium text-slate-700 mb-1">Challan No</label>
-             <div className="w-full p-3 bg-slate-100 border border-slate-300 rounded-lg text-slate-500 font-mono">{challanPreview}</div>
+             <div className="w-full p-3.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 font-mono font-bold">{challanPreview}</div>
            </div>
         </div>
 
-        <Select label="Vendor" value={formData.vendorId} onChange={e => setFormData({...formData, vendorId: e.target.value})}>
-          <option value="">Select Vendor</option>
-          {state.vendors.map(v => <option key={v.id} value={v.id}>{v.name} ({v.code})</option>)}
-        </Select>
+        <SearchableList 
+           label="Vendor" 
+           items={vendorOptions} 
+           value={formData.vendorId} 
+           onSelect={id => setFormData({...formData, vendorId: id})}
+           placeholder="Search Vendor Name or Code..."
+        />
 
-        <div className="mb-4">
-            <label className="block text-sm font-medium text-slate-700 mb-1">SKU Item</label>
-            <input list="sku-options" className="w-full p-3 border border-slate-300 rounded-lg" value={skuInput} onChange={e => setSkuInput(e.target.value)} placeholder="SKU Code" />
-            <datalist id="sku-options">{state.items.map(i => <option key={i.id} value={i.sku} />)}</datalist>
-        </div>
+        <SearchableList 
+           label="SKU Item" 
+           items={skuOptions} 
+           value={skuId} 
+           onSelect={id => setSkuId(id)}
+           onAddNew={handleAddNewSku}
+           placeholder="Search or add new SKU..."
+        />
 
         <div className="grid grid-cols-2 gap-4">
            <Input label="Qty" type="number" inputMode="numeric" value={formData.qty} onChange={e => setFormData({...formData, qty: e.target.value})} />
@@ -192,10 +211,16 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
           <div className="flex gap-4 items-center">
               <label className="flex-1 flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 border-slate-300 transition-colors">
                  <div className="flex gap-2 mb-1">
-                   <Camera className="text-slate-400" size={20}/>
-                   <Upload className="text-slate-400" size={20}/>
+                   {isProcessingImage ? <RefreshCw className="text-blue-500 animate-spin" size={20}/> : (
+                     <>
+                        <Camera className="text-slate-400" size={20}/>
+                        <Upload className="text-slate-400" size={20}/>
+                     </>
+                   )}
                  </div>
-                 <span className="text-xs font-bold text-slate-500 uppercase">{formData.photo ? 'Change Photo' : 'Capture or Upload'}</span>
+                 <span className="text-xs font-bold text-slate-500 uppercase">
+                    {isProcessingImage ? 'Processing...' : (formData.photo ? 'Change Photo' : 'Capture or Upload')}
+                 </span>
                  <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
               </label>
               {formData.photo && (

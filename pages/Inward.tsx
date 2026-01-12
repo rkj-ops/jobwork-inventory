@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { AppState, InwardEntry } from '../types';
-import { Button, Input, Select, Card } from '../components/ui';
-import { Download, Camera, Maximize2, Upload } from 'lucide-react';
+import { Button, Input, Select, Card, SearchableList } from '../components/ui';
+import { Download, Camera, Maximize2, Upload, RefreshCw } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { compressImage } from '../services/sheets';
 
 interface InwardProps {
   state: AppState;
@@ -22,6 +23,7 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
   });
 
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
 
   useEffect(() => {
     if (selectedOutward) {
@@ -47,13 +49,22 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
 
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
+      setIsProcessingImage(true);
       const file = e.target.files[0];
-      if (file.size > 10 * 1024 * 1024) {
-          alert("Image is too large. Please select a photo smaller than 10MB.");
-          return;
-      }
       const reader = new FileReader();
-      reader.onload = (ev) => setFormData(prev => ({ ...prev, photo: ev.target?.result as string }));
+      reader.onload = async (ev) => {
+        const rawBase64 = ev.target?.result as string;
+        try {
+          // IMMEDIATE COMPRESSION for mobile UX
+          const compressed = await compressImage(rawBase64, 800, 0.7);
+          setFormData(prev => ({ ...prev, photo: compressed }));
+        } catch (err) {
+          setFormData(prev => ({ ...prev, photo: rawBase64 }));
+        } finally {
+          setIsProcessingImage(false);
+        }
+      };
+      reader.onerror = () => setIsProcessingImage(false);
       reader.readAsDataURL(file);
     }
   };
@@ -100,24 +111,29 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
     setSelectedOutwardId('');
   };
 
+  const vendorOptions = state.vendors.map(v => ({ id: v.id, label: v.name, sublabel: v.code }));
+
   return (
     <div className="p-4 pb-24 max-w-xl mx-auto">
       {previewImage && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}>
+        <div className="fixed inset-0 z-[110] bg-black/95 flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}>
            <img src={previewImage} className="max-w-full max-h-full rounded" />
         </div>
       )}
 
       <Card title="Source">
-        <Select label="Vendor" value={selectedVendorId} onChange={e => { setSelectedVendorId(e.target.value); setSelectedOutwardId(''); }}>
-          <option value="">Select Vendor</option>
-          {state.vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-        </Select>
+        <SearchableList 
+           label="Vendor" 
+           items={vendorOptions} 
+           value={selectedVendorId} 
+           onSelect={id => { setSelectedVendorId(id); setSelectedOutwardId(''); }}
+           placeholder="Search Vendor Name or Code..."
+        />
 
         {selectedVendorId && (
           <div className="mb-4">
             <label className="block text-sm font-medium text-slate-700 mb-1 font-bold">Pending Challans</label>
-            {pendingOutwards.length === 0 ? <div className="text-slate-500 text-sm p-2 border rounded bg-slate-50">No pending items.</div> : 
+            {pendingOutwards.length === 0 ? <div className="text-slate-500 text-sm p-2 border rounded bg-slate-50 italic">No pending items.</div> : 
               <div className="grid gap-2 max-h-48 overflow-y-auto pr-1">
                 {pendingOutwards.map(out => {
                    const item = state.items.find(i => i.id === out.skuId);
@@ -132,7 +148,7 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
       </Card>
 
       {selectedOutward && (
-        <Card title={`Receiving for #${selectedOutward.challanNo}`} className="border-t-4 border-t-green-500">
+        <Card title={`Receiving for #${selectedOutward.challanNo}`} className="border-t-4 border-t-green-500 animate-in fade-in slide-in-from-bottom duration-300">
            <Input label="Recv Date" type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
            <div className="grid grid-cols-2 gap-4">
              <Input label="Recv Qty" type="number" inputMode="numeric" value={formData.qty} onChange={e => setFormData({...formData, qty: e.target.value})} />
@@ -159,10 +175,16 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
               <div className="flex gap-4 items-center">
                   <label className="flex-1 flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 border-slate-300 transition-colors">
                      <div className="flex gap-2 mb-1">
-                        <Camera className="text-slate-400" size={20}/>
-                        <Upload className="text-slate-400" size={20}/>
+                        {isProcessingImage ? <RefreshCw className="text-blue-500 animate-spin" size={20}/> : (
+                           <>
+                             <Camera className="text-slate-400" size={20}/>
+                             <Upload className="text-slate-400" size={20}/>
+                           </>
+                        )}
                      </div>
-                     <span className="text-xs font-bold text-slate-500 uppercase">{formData.photo ? 'Change Photo' : 'Capture or Upload'}</span>
+                     <span className="text-xs font-bold text-slate-500 uppercase">
+                        {isProcessingImage ? 'Processing...' : (formData.photo ? 'Change Photo' : 'Capture or Upload')}
+                     </span>
                      <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
                   </label>
                   {formData.photo && (
