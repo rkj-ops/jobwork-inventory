@@ -2,10 +2,10 @@ import { SHEETS_CONFIG, DRIVE_CONFIG, AppState, Vendor, Item, WorkType, User, Ou
 import { v4 as uuidv4 } from 'uuid';
 
 /**
- * Resizes and compresses an image base64 string before upload.
- * Helps prevent memory issues on mobile and ensures faster Drive uploads.
+ * Highly optimized image compression for mobile devices.
+ * Reduces image size to ~150-300KB to ensure successful upload over mobile data.
  */
-const compressImage = async (base64: string, maxWidth = 1200, quality = 0.7): Promise<string> => {
+const compressImage = async (base64: string, maxWidth = 1024, quality = 0.6): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.src = base64;
@@ -29,11 +29,30 @@ const compressImage = async (base64: string, maxWidth = 1200, quality = 0.7): Pr
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
-      ctx?.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
+      if (ctx) {
+        // Use better image smoothing for compression
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      } else {
+        resolve(base64);
+      }
     };
-    img.onerror = () => resolve(base64); // Fallback to original if compression fails
+    img.onerror = () => {
+      console.warn("Compression failed, using original.");
+      resolve(base64);
+    };
   });
+};
+
+/**
+ * Efficiently converts a Data URL to a Blob using the browser's built-in fetch.
+ * This is more memory-efficient than manual atob/Uint8Array loops on mobile.
+ */
+const dataURLToBlob = async (dataUrl: string): Promise<Blob> => {
+  const res = await fetch(dataUrl);
+  return await res.blob();
 };
 
 export const initGapi = async (apiKey: string) => {
@@ -79,35 +98,31 @@ const getOrCreateFolder = async (folderName: string): Promise<string | null> => 
     });
     const createData = await createResponse.json();
     return createData.id || null;
-  } catch (e) { return DRIVE_CONFIG.folderId; }
+  } catch (e) { 
+    console.error("Folder creation error:", e);
+    return DRIVE_CONFIG.folderId; 
+  }
 };
 
 const uploadImage = async (base64String: string, fileName: string, targetFolder: 'outward' | 'inward'): Promise<string | null> => {
   try {
     if (!base64String || !base64String.includes(',')) return null;
     
-    // Step 1: Compress for mobile efficiency
+    // Step 1: Compress aggressively for mobile
     const compressedBase64 = await compressImage(base64String);
     
+    // Step 2: Convert to Blob efficiently
+    const blob = await dataURLToBlob(compressedBase64);
+    
     const gapi = (window as any).gapi;
-    const parts = compressedBase64.split(',');
-    const mimeMatch = parts[0].match(/data:(.*);base64/);
-    const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-    const base64Content = parts[1];
-    
-    const byteString = atob(base64Content);
-    const ab = new ArrayBuffer(byteString.length);
-    const ia = new Uint8Array(ab);
-    for (let i = 0; i < byteString.length; i++) {
-        ia[i] = byteString.charCodeAt(i);
-    }
-    const blob = new Blob([ab], { type: mimeType });
-    
     const folderId = await getOrCreateFolder(targetFolder === 'outward' ? 'outward images' : 'inward images');
     const metadata = { name: fileName, parents: folderId ? [folderId] : [DRIVE_CONFIG.folderId] };
     
     const accessToken = gapi.client.getToken()?.access_token;
-    if (!accessToken) return null;
+    if (!accessToken) {
+      console.error("No access token found for image upload");
+      return null;
+    }
 
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -119,7 +134,11 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
       body: form
     });
     
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const errorMsg = await response.text();
+      console.error("Drive upload error response:", errorMsg);
+      return null;
+    }
 
     const data = await response.json();
     return data.webViewLink || null;
@@ -141,6 +160,9 @@ const getInwardSignature = (dateStr: string, vendor: string, outChallan: string,
     const d = dateStr.split('T')[0];
     return `${d}|${vendor.trim().toLowerCase()}|${outChallan.trim().toLowerCase()}|${qty}`;
 };
+
+// Helper to wait
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const syncDataToSheets = async (state: AppState, onUpdateState: (newState: AppState) => void) => {
   const gapi = (window as any).gapi;
@@ -198,6 +220,8 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       let pUrl = e.photoUrl;
       if (!pUrl && e.photo) {
           pUrl = await uploadImage(e.photo, `OUT_${e.challanNo}.jpg`, 'outward') || '';
+          // Small delay to let mobile CPU/Network breathe between uploads
+          if (validOutwardToUpload.length > 1) await delay(400);
       }
       
       newOutwardRows.push([
@@ -217,6 +241,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       let pUrl = e.photoUrl;
       if (!pUrl && e.photo) {
           pUrl = await uploadImage(e.photo, `IN_${out?.challanNo || 'UNK'}.jpg`, 'inward') || '';
+          if (validInwardToUpload.length > 1) await delay(400);
       }
       
       newInwardRows.push([

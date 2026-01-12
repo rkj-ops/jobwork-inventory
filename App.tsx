@@ -9,7 +9,7 @@ import Outward from './pages/Outward';
 import Inward from './pages/Inward';
 import Report from './pages/Report';
 
-const APP_VERSION = "2.8.0-auth-optimized";
+const APP_VERSION = "2.9.0-mobile-sync-fix";
 
 const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState('outward');
@@ -36,7 +36,8 @@ const App: React.FC = () => {
   const updateAndSync = (newState: AppState, shouldSync: boolean = false) => {
     setState(newState);
     if (shouldSync) {
-        triggerAutoSync(newState, false);
+        // Debounce slightly to ensure image processing finishes
+        setTimeout(() => triggerAutoSync(newState, false), 100);
     }
   };
 
@@ -111,7 +112,8 @@ const App: React.FC = () => {
       }
 
       if (tokenClient.current) {
-        // Attempt re-use if forcePrompt is false. mobile chrome behaves better with prompt: '' (empty)
+        // On mobile, prompt: 'none' often fails if no session exists.
+        // For auto-sync, we use empty prompt to avoid annoying users, but force it if manual.
         tokenClient.current.requestAccessToken({ 
             prompt: forcePrompt ? 'select_account' : '',
             hint: localStorage.getItem('last_user_email') || undefined
