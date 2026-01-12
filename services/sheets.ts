@@ -3,9 +3,9 @@ import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Highly optimized image compression for mobile devices.
- * Reduces image size to ~150-300KB to ensure successful upload over mobile data.
+ * Reduces image size to ~800px width to ensure successful upload over mobile data.
  */
-export const compressImage = async (base64: string, maxWidth = 1024, quality = 0.6): Promise<string> => {
+export const compressImage = async (base64: string, maxWidth = 800, quality = 0.6): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.src = base64;
@@ -30,27 +30,37 @@ export const compressImage = async (base64: string, maxWidth = 1024, quality = 0
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
+        ctx.fillStyle = "#FFFFFF"; // Ensure white background for transparent PNGs converted to JPEG
+        ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
         resolve(canvas.toDataURL('image/jpeg', quality));
       } else {
         resolve(base64);
       }
     };
-    img.onerror = () => {
-      console.warn("Compression failed, using original.");
+    img.onerror = (e) => {
+      console.warn("Compression failed, using original.", e);
       resolve(base64);
     };
   });
 };
 
-/**
- * Efficiently converts a Data URL to a Blob using the browser's built-in fetch.
- */
 const dataURLToBlob = async (dataUrl: string): Promise<Blob> => {
-  const res = await fetch(dataUrl);
-  return await res.blob();
+  try {
+      const res = await fetch(dataUrl);
+      return await res.blob();
+  } catch (e) {
+      // Fallback for older browsers
+      const arr = dataUrl.split(',');
+      const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while(n--){
+          u8arr[n] = bstr.charCodeAt(n);
+      }
+      return new Blob([u8arr], {type:mime});
+  }
 };
 
 export const initGapi = async (apiKey: string) => {
@@ -78,27 +88,41 @@ export const initGapi = async (apiKey: string) => {
 
 const getOrCreateFolder = async (folderName: string): Promise<string | null> => {
   const gapi = (window as any).gapi;
+  // Always get a fresh token from the client if possible
   const accessToken = gapi.client.getToken()?.access_token;
   if (!accessToken) return null;
 
   try {
+    // Try to find the specific folder inside the parent
+    const query = `name='${folderName}' and '${DRIVE_CONFIG.folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
     const searchResponse = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=name='${folderName}' and '${DRIVE_CONFIG.folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
-    const searchData = await searchResponse.json();
-    if (searchData.files && searchData.files.length > 0) return searchData.files[0].id;
+    
+    if (searchResponse.ok) {
+        const searchData = await searchResponse.json();
+        if (searchData.files && searchData.files.length > 0) return searchData.files[0].id;
+    }
 
+    // If not found, try to create it in the parent
     const createResponse = await fetch('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: folderName, mimeType: 'application/vnd.google-apps.folder', parents: [DRIVE_CONFIG.folderId] })
     });
-    const createData = await createResponse.json();
-    return createData.id || null;
+    
+    if (createResponse.ok) {
+        const createData = await createResponse.json();
+        return createData.id;
+    }
+    
+    // If creation fails (e.g. permission denied on parent), return null so we upload to root or handle gracefully
+    console.warn("Could not create folder in specified parent. Defaulting to root or AppData.");
+    return null;
   } catch (e) { 
     console.error("Folder creation error:", e);
-    return DRIVE_CONFIG.folderId; 
+    return null; 
   }
 };
 
@@ -106,15 +130,29 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
   try {
     if (!base64String || !base64String.includes(',')) return null;
     
+    // Step 1: Compress
     const compressedBase64 = await compressImage(base64String);
+    
+    // Step 2: Blob
     const blob = await dataURLToBlob(compressedBase64);
     
     const gapi = (window as any).gapi;
-    const folderId = await getOrCreateFolder(targetFolder === 'outward' ? 'outward images' : 'inward images');
-    const metadata = { name: fileName, parents: folderId ? [folderId] : [DRIVE_CONFIG.folderId] };
-    
     const accessToken = gapi.client.getToken()?.access_token;
-    if (!accessToken) return null;
+    if (!accessToken) {
+      console.error("No access token found for image upload");
+      return null;
+    }
+
+    // Determine parent folder
+    const specificFolderId = await getOrCreateFolder(targetFolder === 'outward' ? 'outward images' : 'inward images');
+    // If we couldn't get the specific folder, try the main folder. If that fails, it goes to root (no parents).
+    const parents = specificFolderId ? [specificFolderId] : (DRIVE_CONFIG.folderId ? [DRIVE_CONFIG.folderId] : []);
+    
+    const metadata = { 
+        name: fileName, 
+        parents: parents,
+        mimeType: 'image/jpeg'
+    };
 
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -126,7 +164,12 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
       body: form
     });
     
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const errorMsg = await response.text();
+      console.error("Drive upload error response:", errorMsg);
+      // Retry logic could go here, but for now just fail gracefully
+      return null;
+    }
 
     const data = await response.json();
     return data.webViewLink || null;
@@ -196,17 +239,20 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
          return !seenInwardSignatures.has(sig);
     });
 
+    // UPLOAD DATA BATCH 1
     if (unsyncedVendors.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.vendorSheetName}!A:B`, valueInputOption: "USER_ENTERED", resource: { values: unsyncedVendors.map(v => [v.name, v.code]) } });
     if (unsyncedItems.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.itemSheetName}!A:B`, valueInputOption: "USER_ENTERED", resource: { values: unsyncedItems.map(i => [i.sku, i.description]) } });
     if (unsyncedWorks.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.workSheetName}!A:A`, valueInputOption: "USER_ENTERED", resource: { values: unsyncedWorks.map(w => [w.name]) } });
     if (unsyncedUsers.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.userSheetName}!A:A`, valueInputOption: "USER_ENTERED", resource: { values: unsyncedUsers.map(u => [u.name]) } });
 
+    // UPLOAD IMAGES AND ROWS
     const newOutwardRows: any[] = [];
     for (const e of validOutwardToUpload) {
       let pUrl = e.photoUrl;
+      // Retry upload if not present but photo data exists
       if (!pUrl && e.photo) {
           pUrl = await uploadImage(e.photo, `OUT_${e.challanNo}.jpg`, 'outward') || '';
-          if (validOutwardToUpload.length > 1) await delay(400);
+          if (validOutwardToUpload.length > 1) await delay(500); // Throttling
       }
       
       newOutwardRows.push([
@@ -226,7 +272,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       let pUrl = e.photoUrl;
       if (!pUrl && e.photo) {
           pUrl = await uploadImage(e.photo, `IN_${out?.challanNo || 'UNK'}.jpg`, 'inward') || '';
-          if (validInwardToUpload.length > 1) await delay(400);
+          if (validInwardToUpload.length > 1) await delay(500); // Throttling
       }
       
       newInwardRows.push([
@@ -277,62 +323,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], remarks: r[12], synced: true
       };
     });
-
-    const reconRows = finalOutward.map(o => {
-        const ins = finalInward.filter(i => i.outwardChallanId === o.id);
-        const inQty = ins.reduce((sum, i) => sum + i.qty, 0);
-        const inCombo = ins.reduce((sum, i) => sum + (i.comboQty || 0), 0);
-        const twRec = ins.reduce((sum, i) => sum + i.totalWeight, 0);
-        
-        const isMarkedClosed = o.status === 'COMPLETED';
-        const isActuallyDone = inQty >= o.qty && o.qty > 0;
-        
-        let statusStr = 'pending';
-        if (isMarkedClosed) {
-            statusStr = o.qty > inQty ? 'short qty completed' : 'complete';
-        } else if (isActuallyDone) {
-            statusStr = 'complete';
-        }
-
-        const recvDatesStr = Array.from(new Set(ins.map(i => i.date.split('T')[0])))
-            .sort().map(d => formatDisplayDate(d)).join('; ');
-
-        const inwardChecked = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
-        const inwardEntered = Array.from(new Set(ins.map(i => i.enteredBy).filter(Boolean))).join('; ');
-        const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
-
-        return [
-            statusStr, 
-            allVendors.find(v => v.id === o.vendorId)?.name || 'Unknown',
-            formatDisplayDate(o.date),
-            recvDatesStr || '---',
-            o.challanNo,
-            allWorks.find(w => w.id === o.workId)?.name || '',
-            allItems.find(i => i.id === o.skuId)?.sku || 'Unknown',
-            o.qty,
-            inQty,
-            Math.max(0, o.qty - inQty),
-            o.comboQty || 0,
-            inCombo,
-            Math.max(0, (o.comboQty || 0) - inCombo),
-            o.totalWeight,
-            twRec,
-            (o.totalWeight - twRec).toFixed(3),
-            inwardChecked || '---',
-            inwardEntered || '---',
-            inwardRemarks || '---',
-            o.checkedBy || '---',
-            o.enteredBy || '---',
-            o.remarks || '---'
-        ];
-    });
-    
-    if (reconRows.length) {
-        await gapi.client.sheets.spreadsheets.values.update({
-            spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:V${reconRows.length + 1}`,
-            valueInputOption: "USER_ENTERED", resource: { values: reconRows }
-        });
-    }
 
     onUpdateState({ vendors: allVendors, items: allItems, workTypes: allWorks, users: allUsers, outwardEntries: finalOutward, inwardEntries: finalInward });
     return { success: true, message: `Sync Complete: ${timestamp}` };

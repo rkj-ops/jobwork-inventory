@@ -22,7 +22,7 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
     enteredBy: '', checkedBy: '', photo: ''
   });
 
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
 
   useEffect(() => {
@@ -32,8 +32,13 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
         totalWeight: '', pendalWeight: '',
         materialWeight: '', remarks: '', enteredBy: '', checkedBy: '', photo: ''
       });
+      setPreviewUrl(null);
     }
   }, [selectedOutward]);
+
+  useEffect(() => {
+    return () => { if(previewUrl) URL.revokeObjectURL(previewUrl); }
+  }, [previewUrl]);
 
   useEffect(() => {
     const mat = (parseFloat(formData.totalWeight) || 0) - (parseFloat(formData.pendalWeight) || 0);
@@ -49,13 +54,14 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
 
   const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setIsProcessingImage(true);
       const file = e.target.files[0];
+      setPreviewUrl(URL.createObjectURL(file));
+
+      setIsProcessingImage(true);
       const reader = new FileReader();
       reader.onload = async (ev) => {
         const rawBase64 = ev.target?.result as string;
         try {
-          // IMMEDIATE COMPRESSION for mobile UX
           const compressed = await compressImage(rawBase64, 800, 0.7);
           setFormData(prev => ({ ...prev, photo: compressed }));
         } catch (err) {
@@ -109,18 +115,13 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
 
     setFormData({ date: today, qty: '', comboQty: '', totalWeight: '', pendalWeight: '', materialWeight: '', remarks: '', enteredBy: '', checkedBy: '', photo: '' });
     setSelectedOutwardId('');
+    setPreviewUrl(null);
   };
 
   const vendorOptions = state.vendors.map(v => ({ id: v.id, label: v.name, sublabel: v.code }));
 
   return (
     <div className="p-4 pb-24 max-w-xl mx-auto">
-      {previewImage && (
-        <div className="fixed inset-0 z-[110] bg-black/95 flex items-center justify-center p-4" onClick={() => setPreviewImage(null)}>
-           <img src={previewImage} className="max-w-full max-h-full rounded" />
-        </div>
-      )}
-
       <Card title="Source">
         <SearchableList 
            label="Vendor" 
@@ -173,7 +174,7 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
            <div className="mb-4">
               <label className="block text-sm font-medium text-slate-700 mb-1 font-bold">Inward Photo Attachment</label>
               <div className="flex gap-4 items-center">
-                  <label className="flex-1 flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 border-slate-300 transition-colors">
+                  <label className="flex-1 flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 border-slate-300 transition-colors bg-slate-50">
                      <div className="flex gap-2 mb-1">
                         {isProcessingImage ? <RefreshCw className="text-blue-500 animate-spin" size={20}/> : (
                            <>
@@ -183,21 +184,22 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
                         )}
                      </div>
                      <span className="text-xs font-bold text-slate-500 uppercase">
-                        {isProcessingImage ? 'Processing...' : (formData.photo ? 'Change Photo' : 'Capture or Upload')}
+                        {isProcessingImage ? 'Processing...' : (previewUrl ? 'Change Photo' : 'Capture / Gallery')}
                      </span>
                      <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
                   </label>
-                  {formData.photo && (
-                      <div className="relative group cursor-pointer" onClick={() => setPreviewImage(formData.photo)}>
-                        <img src={formData.photo} className="h-16 w-16 rounded-lg border border-slate-300 object-cover shadow-sm" />
-                        <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 flex items-center justify-center rounded-lg transition-opacity"><Maximize2 className="text-white opacity-0 group-hover:opacity-100" size={16}/></div>
+                  {previewUrl && (
+                      <div className="relative group cursor-pointer" onClick={() => {}}>
+                        <img src={previewUrl} className="h-20 w-20 rounded-lg border border-slate-200 object-cover shadow-sm bg-white" />
                       </div>
                   )}
               </div>
             </div>
 
            <Input label="Remarks" value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} />
-           <Button onClick={handleSubmit}><Download size={20} className="mr-2" /> Save Inward</Button>
+           <Button onClick={handleSubmit} disabled={isProcessingImage}>
+             {isProcessingImage ? 'Processing Image...' : <><Download size={20} className="mr-2" /> Save Inward</>}
+           </Button>
         </Card>
       )}
     </div>
