@@ -73,23 +73,15 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
       
       // 2. Background Compression
       setIsProcessingImage(true);
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        const rawBase64 = ev.target?.result as string;
-        try {
-          // Force compression to reduce memory footprint for upload
-          const compressed = await compressImage(rawBase64, 800, 0.7);
+      try {
+          // PASS FILE DIRECTLY - Do not read as DataURL first
+          const compressed = await compressImage(file, 800, 0.6);
           setFormData(prev => ({ ...prev, photo: compressed }));
-        } catch (err) {
+      } catch (err) {
           console.error("Compression failed", err);
-          // Fallback to raw if compression fails, but warn user
-          setFormData(prev => ({ ...prev, photo: rawBase64 })); 
-        } finally {
+      } finally {
           setIsProcessingImage(false);
-        }
-      };
-      reader.onerror = () => setIsProcessingImage(false);
-      reader.readAsDataURL(file);
+      }
     }
   };
 

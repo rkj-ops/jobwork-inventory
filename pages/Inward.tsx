@@ -52,26 +52,21 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
     return returnedQty < e.qty;
   });
 
-  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setPreviewUrl(URL.createObjectURL(file));
 
       setIsProcessingImage(true);
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        const rawBase64 = ev.target?.result as string;
-        try {
-          const compressed = await compressImage(rawBase64, 800, 0.7);
+      try {
+          // PASS FILE DIRECTLY
+          const compressed = await compressImage(file, 800, 0.6);
           setFormData(prev => ({ ...prev, photo: compressed }));
-        } catch (err) {
-          setFormData(prev => ({ ...prev, photo: rawBase64 }));
-        } finally {
+      } catch (err) {
+          console.error(err);
+      } finally {
           setIsProcessingImage(false);
-        }
-      };
-      reader.onerror = () => setIsProcessingImage(false);
-      reader.readAsDataURL(file);
+      }
     }
   };
 
