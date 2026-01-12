@@ -171,7 +171,6 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
                 const data = await response.json();
                 return data.webViewLink || null;
             } else {
-               // If 401, token might be expired, but we can't refresh easily here without breaking flow
                console.warn(`Upload attempt ${attempts + 1} failed: ${response.status}`);
             }
         } catch (netErr) {
@@ -195,9 +194,16 @@ const parseDate = (value: any): string => {
   } catch (e) { return new Date().toISOString(); }
 };
 
+// Helper to normalize dates (handles both ISO "2023-01-01T..." and Display "01-Jan-2023")
+const normalizeDate = (dateStr: string) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toISOString().split('T')[0];
+};
+
 const getInwardSignature = (dateStr: string, vendor: string, outChallan: string, qty: number) => {
-    const d = dateStr.split('T')[0];
-    return `${d}|${vendor.trim().toLowerCase()}|${outChallan.trim().toLowerCase()}|${qty}`;
+    return `${normalizeDate(dateStr)}|${vendor.trim().toLowerCase()}|${outChallan.trim().toLowerCase()}|${qty}`;
 };
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -255,11 +261,8 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const newOutwardRows: any[] = [];
     for (const e of validOutwardToUpload) {
       let pUrl = e.photoUrl;
-      // If no URL but we have local photo data, try upload
       if (!pUrl && e.photo) {
-          // Attempt upload
           pUrl = await uploadImage(e.photo, `OUT_${e.challanNo}.jpg`, 'outward') || '';
-          // Throttle slightly more to prevent network congestion on mobile
           if (validOutwardToUpload.length > 1) await delay(800); 
       }
       
@@ -292,6 +295,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     }
     if (newInwardRows.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.inwardSheetName}!A:N`, valueInputOption: "USER_ENTERED", resource: { values: newInwardRows } });
 
+    // Merging Data for State and Reconciliation
     const allVendors = [...existingVendors, ...unsyncedVendors.map(v => ({...v, synced: true}))];
     const allItems = [...existingItems, ...unsyncedItems.map(i => ({...i, synced: true}))];
     const allWorks = [...existingWorks, ...unsyncedWorks.map(w => ({...w, synced: true}))];
@@ -331,6 +335,70 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], remarks: r[12], synced: true
       };
     });
+
+    // --- RECONCILIATION SHEET UPDATE ---
+    const reconRows = finalOutward.map(o => {
+        const ins = finalInward.filter(i => i.outwardChallanId === o.id);
+        const inQty = ins.reduce((sum, i) => sum + i.qty, 0);
+        const inCombo = ins.reduce((sum, i) => sum + (i.comboQty || 0), 0);
+        const twRec = ins.reduce((sum, i) => sum + i.totalWeight, 0);
+        
+        const isMarkedClosed = o.status === 'COMPLETED';
+        const isActuallyDone = inQty >= o.qty && o.qty > 0;
+        
+        let statusStr = 'Pending';
+        if (isMarkedClosed) {
+            statusStr = o.qty > inQty ? 'Short Closed' : 'Completed';
+        } else if (isActuallyDone) {
+            statusStr = 'Completed';
+        }
+
+        const recvDatesStr = Array.from(new Set(ins.map(i => normalizeDate(i.date))))
+            .sort().map(d => formatDisplayDate(d)).join('; ');
+
+        const inwardChecked = Array.from(new Set(ins.map(i => i.checkedBy).filter(Boolean))).join('; ');
+        const inwardEntered = Array.from(new Set(ins.map(i => i.enteredBy).filter(Boolean))).join('; ');
+        const inwardRemarks = ins.map(i => i.remarks).filter(Boolean).join(' | ');
+
+        const vendorName = allVendors.find(v => v.id === o.vendorId)?.name || 'Unknown';
+        const workName = allWorks.find(w => w.id === o.workId)?.name || '';
+        const skuName = allItems.find(i => i.id === o.skuId)?.sku || 'Unknown';
+
+        return [
+            statusStr, 
+            vendorName,
+            formatDisplayDate(o.date),
+            recvDatesStr || '---',
+            o.challanNo,
+            workName,
+            skuName,
+            o.qty,
+            inQty,
+            Math.max(0, o.qty - inQty), // Short/Pending
+            o.comboQty || 0,
+            inCombo,
+            Math.max(0, (o.comboQty || 0) - inCombo),
+            o.totalWeight,
+            twRec,
+            (o.totalWeight - twRec).toFixed(3),
+            inwardChecked || '---',
+            inwardEntered || '---',
+            inwardRemarks || '---',
+            o.checkedBy || '---',
+            o.enteredBy || '---',
+            o.remarks || '---'
+        ];
+    });
+
+    if (reconRows.length) {
+        // Overwrite the reconciliation sheet starting from row 2
+        await gapi.client.sheets.spreadsheets.values.update({
+            spreadsheetId: SHEETS_CONFIG.spreadsheetId, 
+            range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:V${reconRows.length + 1}`,
+            valueInputOption: "USER_ENTERED", 
+            resource: { values: reconRows }
+        });
+    }
 
     onUpdateState({ vendors: allVendors, items: allItems, workTypes: allWorks, users: allUsers, outwardEntries: finalOutward, inwardEntries: finalInward });
     return { success: true, message: `Sync Complete: ${timestamp}` };
