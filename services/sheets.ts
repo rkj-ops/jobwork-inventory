@@ -388,7 +388,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         challanNo: challanNo, skuId: allItems.find(i => i.sku === r[3])?.id || '',
         qty: parseFloat(r[4] || 0), comboQty: parseFloat(r[5] || 0),
         totalWeight: parseFloat(r[6] || 0), pendalWeight: parseFloat(r[7] || 0), materialWeight: parseFloat(r[8] || 0),
-        checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], workId: allWorks.find(w => w.name === r[12])?.id || '',
+        checkedBy: r[9] || '', enteredBy: r[10] || '', photoUrl: r[11] || undefined, workId: allWorks.find(w => w.name === r[12])?.id || '',
         remarks: r[13], status: effectiveStatus, synced: true
       };
     });
@@ -418,7 +418,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         skuId: allItems.find(i => i.sku === r[3])?.id || '',
         qty: parseFloat(r[4] || 0), comboQty: parseFloat(r[5] || 0),
         totalWeight: parseFloat(r[6] || 0), pendalWeight: parseFloat(r[7] || 0), materialWeight: parseFloat(r[8] || 0),
-        checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], remarks: r[12], synced: true
+        checkedBy: r[9] || '', enteredBy: r[10] || '', photoUrl: r[11] || undefined, remarks: r[12], synced: true
       };
     });
     
