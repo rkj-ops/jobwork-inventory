@@ -317,7 +317,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const failedOutwards = new Set<string>();
 
     for (const e of candidatesOutward) {
-      let pUrl = e.photoUrl;
+      let pUrl: string | null | undefined = e.photoUrl;
       if (!pUrl && e.photo) {
           pUrl = await uploadImage(e.photo, `OUT_${e.challanNo}.jpg`, 'outward');
           // If upload fails explicitly (returns null), skip this entry to prevent data loss (keep it unsynced)
@@ -345,7 +345,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
 
     for (const e of candidatesInward) {
       const out = state.outwardEntries.find(o => o.id === e.outwardChallanId);
-      let pUrl = e.photoUrl;
+      let pUrl: string | null | undefined = e.photoUrl;
       if (!pUrl && e.photo) {
           pUrl = await uploadImage(e.photo, `IN_${out?.challanNo || 'UNK'}.jpg`, 'inward');
           if (pUrl === null) {
