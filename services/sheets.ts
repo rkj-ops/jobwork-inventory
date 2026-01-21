@@ -235,6 +235,33 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const existingOutwardRows = (valueRanges[3].values || []).slice(1);
     const existingInwardRows = (valueRanges[4].values || []).slice(1);
 
+    // --- STATUS UPDATE SYNC (Fix for Short Close not syncing) ---
+    // If a row exists in Sheet but Status is OPEN, and Local State is COMPLETED, update the Sheet.
+    const statusUpdates: any[] = [];
+    existingOutwardRows.forEach((row: any, index: number) => {
+        const challanNo = row[2];
+        const localMatch = state.outwardEntries.find(o => o.challanNo === challanNo);
+        const sheetStatus = row[14]; // Column O is index 14
+        
+        // Push update if local is COMPLETED but sheet is not
+        if (localMatch && localMatch.status === 'COMPLETED' && sheetStatus !== 'COMPLETED') {
+             // Row index = header(1) + array_index(index) + 1 (1-based) = index + 2
+             const range = `${SHEETS_CONFIG.outwardSheetName}!O${index + 2}`;
+             statusUpdates.push({ 
+                 range: range, 
+                 values: [['COMPLETED']] 
+             });
+        }
+    });
+
+    if (statusUpdates.length > 0) {
+        await gapi.client.sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId: SHEETS_CONFIG.spreadsheetId,
+            resource: { data: statusUpdates, valueInputOption: "USER_ENTERED" }
+        });
+    }
+    // -----------------------------------------------------------
+
     const seenOutwardChallans = new Set(existingOutwardRows.map((r:any) => r[2]?.trim())); 
     const seenInwardSignatures = new Set(existingInwardRows.map((r:any) => 
         getInwardSignature(r[0]||'', r[1]||'', r[2]||'', parseFloat(r[4]||0))
@@ -305,7 +332,8 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       const challanNo = r[2];
       const localMatch = state.outwardEntries.find(o => o.challanNo === challanNo);
       const statusFromSheet = r[14] as 'OPEN' | 'COMPLETED';
-      const effectiveStatus = localMatch?.status === 'COMPLETED' ? 'COMPLETED' : statusFromSheet;
+      // Prioritize local 'COMPLETED' (Short Close) or Sheet 'COMPLETED' (Synced from other device)
+      const effectiveStatus = (localMatch?.status === 'COMPLETED' || statusFromSheet === 'COMPLETED') ? 'COMPLETED' : 'OPEN';
 
       return {
         id: localMatch?.id || uuidv4(), date: parseDate(r[0]), 
