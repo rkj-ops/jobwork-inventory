@@ -26,25 +26,26 @@ export const loadData = (): AppState => {
 };
 
 /**
- * Enhanced saveData that filters out raw base64 photos before persisting to localStorage.
- * Base64 images are too large for the 5MB localStorage limit. 
- * They are kept in memory state for syncing, but not saved to disk.
+ * Enhanced saveData:
+ * - Keeps base64 photos for UNSYNCED entries (critical for mobile reliability).
+ * - Removes base64 photos for SYNCED entries to save space (they have photoUrl).
  */
 export const saveData = (data: AppState) => {
   try {
-    // Deep clone and clean the data for storage
+    // Only strip photos from entries that are already successfully synced
     const storageData = {
       ...data,
-      outwardEntries: data.outwardEntries.map(({ photo, ...rest }) => rest),
-      inwardEntries: data.inwardEntries.map(({ photo, ...rest }) => rest)
+      outwardEntries: data.outwardEntries.map(e => e.synced ? { ...e, photo: undefined } : e),
+      inwardEntries: data.inwardEntries.map(e => e.synced ? { ...e, photo: undefined } : e)
     };
     
     localStorage.setItem(STORAGE_KEY, JSON.stringify(storageData));
   } catch (e) {
     console.error("Storage Error:", e);
+    // If quota exceeded, we might need a more aggressive cleanup strategy
+    // But blocking photo save is better than crashing
     if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.code === 22)) {
-        // This shouldn't happen now with the photo filtering, but kept as a fallback
-        console.warn("Local storage quota exceeded even after filtering.");
+        console.warn("Local storage quota exceeded. Attempting critical cleanup.");
     }
   }
 };

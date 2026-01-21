@@ -1,10 +1,6 @@
 import { SHEETS_CONFIG, DRIVE_CONFIG, AppState, Vendor, Item, WorkType, User, OutwardEntry, InwardEntry, formatDisplayDate } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
-/**
- * Highly optimized image compression for mobile devices.
- * Accepts File directly to avoid reading large Base64 strings into memory first.
- */
 export const compressImage = async (input: File | string, maxWidth = 800, quality = 0.6): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -73,7 +69,8 @@ const dataURLToBlob = (dataUrl: string): Blob => {
     return new Blob([u8arr], { type: mime });
   } catch (e) {
     console.error("Blob conversion failed", e);
-    return new Blob([], { type: 'image/jpeg' });
+    // Return a minimal valid blob to prevent fetch crashes, though upload will be empty
+    return new Blob([''], { type: 'application/octet-stream' });
   }
 };
 
@@ -105,6 +102,7 @@ const getOrCreateFolder = async (folderName: string): Promise<string | null> => 
   const accessToken = gapi.client.getToken()?.access_token;
   if (!accessToken) return null;
 
+  // 1. Try finding/creating in the specific configured folder (Shared Folder scenario)
   try {
     const query = `name='${folderName}' and '${DRIVE_CONFIG.folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
     const searchResponse = await fetch(
@@ -117,6 +115,7 @@ const getOrCreateFolder = async (folderName: string): Promise<string | null> => 
         if (searchData.files && searchData.files.length > 0) return searchData.files[0].id;
     }
 
+    // Try creating in configured folder
     const createResponse = await fetch('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -127,11 +126,37 @@ const getOrCreateFolder = async (folderName: string): Promise<string | null> => 
         const createData = await createResponse.json();
         return createData.id;
     }
-    
-    return DRIVE_CONFIG.folderId;
   } catch (e) { 
-    return DRIVE_CONFIG.folderId; 
+     console.warn("Could not access configured folder, falling back to root.");
   }
+
+  // 2. Fallback: Find/Create in User's Root Drive if configured folder failed (Permission denied etc)
+  try {
+     const rootQuery = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+     const rootSearch = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(rootQuery)}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+     );
+     if (rootSearch.ok) {
+         const d = await rootSearch.json();
+         if (d.files && d.files.length > 0) return d.files[0].id;
+     }
+     
+     // Create in root
+     const rootCreate = await fetch('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: folderName, mimeType: 'application/vnd.google-apps.folder' })
+     });
+     if (rootCreate.ok) {
+         const d = await rootCreate.json();
+         return d.id;
+     }
+  } catch (e) {
+      console.error("Root folder fallback failed", e);
+  }
+
+  return null; 
 };
 
 const uploadImage = async (base64String: string, fileName: string, targetFolder: 'outward' | 'inward'): Promise<string | null> => {
@@ -139,17 +164,26 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
 
   const gapi = (window as any).gapi;
   const accessToken = gapi.client.getToken()?.access_token;
-  if (!accessToken) return null;
+  if (!accessToken) {
+      console.error("Upload failed: No access token");
+      return null;
+  }
 
   try {
-    // 1. Convert to Blob (Sync operation, fast)
     const blob = dataURLToBlob(base64String);
+    if (blob.size < 100) {
+        console.error("Upload failed: Invalid blob size");
+        return null;
+    }
     
-    // 2. Resolve Folder
-    const folderId = await getOrCreateFolder(targetFolder === 'outward' ? 'outward images' : 'inward images');
+    // Resolve Folder - Dynamic based on target
+    const folderName = targetFolder === 'outward' ? 'Outward Images' : 'Inward Images';
+    const folderId = await getOrCreateFolder(folderName);
+    
+    // Metadata
     const metadata = { 
         name: fileName, 
-        parents: [folderId || DRIVE_CONFIG.folderId],
+        parents: folderId ? [folderId] : [], // If no folder found, upload to root
         mimeType: 'image/jpeg'
     };
 
@@ -157,7 +191,6 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     form.append('file', blob);
 
-    // 3. Upload with Retry Logic
     let attempts = 0;
     while (attempts < 3) {
         try {
@@ -169,15 +202,17 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
             
             if (response.ok) {
                 const data = await response.json();
+                console.log(`Uploaded ${fileName} to ${data.webViewLink}`);
                 return data.webViewLink || null;
             } else {
-               console.warn(`Upload attempt ${attempts + 1} failed: ${response.status}`);
+               const errText = await response.text();
+               console.warn(`Upload fail ${response.status}: ${errText}`);
             }
         } catch (netErr) {
             console.warn(`Upload network error attempt ${attempts + 1}`, netErr);
         }
         attempts++;
-        await delay(1000 * attempts); // Backoff: 1s, 2s, 3s
+        await delay(1000 * attempts);
     }
     return null;
   } catch (error) { 
@@ -194,7 +229,6 @@ const parseDate = (value: any): string => {
   } catch (e) { return new Date().toISOString(); }
 };
 
-// Helper to normalize dates (handles both ISO "2023-01-01T..." and Display "01-Jan-2023")
 const normalizeDate = (dateStr: string) => {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -235,22 +269,16 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const existingOutwardRows = (valueRanges[3].values || []).slice(1);
     const existingInwardRows = (valueRanges[4].values || []).slice(1);
 
-    // --- STATUS UPDATE SYNC (Fix for Short Close not syncing) ---
-    // If a row exists in Sheet but Status is OPEN, and Local State is COMPLETED, update the Sheet.
+    // --- STATUS UPDATE SYNC ---
     const statusUpdates: any[] = [];
     existingOutwardRows.forEach((row: any, index: number) => {
         const challanNo = row[2];
         const localMatch = state.outwardEntries.find(o => o.challanNo === challanNo);
-        const sheetStatus = row[14]; // Column O is index 14
+        const sheetStatus = row[14]; 
         
-        // Push update if local is COMPLETED but sheet is not
         if (localMatch && localMatch.status === 'COMPLETED' && sheetStatus !== 'COMPLETED') {
-             // Row index = header(1) + array_index(index) + 1 (1-based) = index + 2
              const range = `${SHEETS_CONFIG.outwardSheetName}!O${index + 2}`;
-             statusUpdates.push({ 
-                 range: range, 
-                 values: [['COMPLETED']] 
-             });
+             statusUpdates.push({ range, values: [['COMPLETED']] });
         }
     });
 
@@ -260,7 +288,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
             resource: { data: statusUpdates, valueInputOption: "USER_ENTERED" }
         });
     }
-    // -----------------------------------------------------------
 
     const seenOutwardChallans = new Set(existingOutwardRows.map((r:any) => r[2]?.trim())); 
     const seenInwardSignatures = new Set(existingInwardRows.map((r:any) => 
@@ -272,8 +299,9 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     const unsyncedWorks = state.workTypes.filter(e => !e.synced && !existingWorks.some(ew => ew.name === e.name));
     const unsyncedUsers = state.users.filter(e => !e.synced && !existingUsers.some(eu => eu.name === e.name));
     
-    const validOutwardToUpload = state.outwardEntries.filter(e => !e.synced && !seenOutwardChallans.has(e.challanNo.trim()));
-    const validInwardToUpload = state.inwardEntries.filter(e => !e.synced).filter(e => {
+    // Filter unsynced, but DO NOT commit them yet if critical data (photo) fails to upload
+    const candidatesOutward = state.outwardEntries.filter(e => !e.synced && !seenOutwardChallans.has(e.challanNo.trim()));
+    const candidatesInward = state.inwardEntries.filter(e => !e.synced).filter(e => {
          const vendorName = state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown';
          const outChallan = state.outwardEntries.find(o => o.id === e.outwardChallanId)?.challanNo || '---';
          const sig = getInwardSignature(e.date, vendorName, outChallan, e.qty);
@@ -286,18 +314,26 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     if (unsyncedUsers.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.userSheetName}!A:A`, valueInputOption: "USER_ENTERED", resource: { values: unsyncedUsers.map(u => [u.name]) } });
 
     const newOutwardRows: any[] = [];
-    for (const e of validOutwardToUpload) {
+    const failedOutwards = new Set<string>();
+
+    for (const e of candidatesOutward) {
       let pUrl = e.photoUrl;
       if (!pUrl && e.photo) {
-          pUrl = await uploadImage(e.photo, `OUT_${e.challanNo}.jpg`, 'outward') || '';
-          if (validOutwardToUpload.length > 1) await delay(800); 
+          pUrl = await uploadImage(e.photo, `OUT_${e.challanNo}.jpg`, 'outward');
+          // If upload fails explicitly (returns null), skip this entry to prevent data loss (keep it unsynced)
+          if (pUrl === null) {
+              console.error(`Skipping sync for ${e.challanNo}: Image upload failed.`);
+              failedOutwards.add(e.id);
+              continue; 
+          }
+          if (candidatesOutward.length > 1) await delay(800); 
       }
       
       newOutwardRows.push([
         formatDisplayDate(e.date), state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown',
         e.challanNo, state.items.find(i => i.id === e.skuId)?.sku || 'Unknown', 
         e.qty, e.comboQty || '', e.totalWeight, e.pendalWeight, e.materialWeight, 
-        e.checkedBy || '', e.enteredBy || '', pUrl, 
+        e.checkedBy || '', e.enteredBy || '', pUrl || '', 
         state.workTypes.find(w => w.id === e.workId)?.name || '', 
         e.remarks || '', e.status || 'OPEN', timestamp
       ]);
@@ -305,34 +341,45 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     if (newOutwardRows.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.outwardSheetName}!A:P`, valueInputOption: "USER_ENTERED", resource: { values: newOutwardRows } });
 
     const newInwardRows: any[] = [];
-    for (const e of validInwardToUpload) {
+    const failedInwards = new Set<string>();
+
+    for (const e of candidatesInward) {
       const out = state.outwardEntries.find(o => o.id === e.outwardChallanId);
       let pUrl = e.photoUrl;
       if (!pUrl && e.photo) {
-          pUrl = await uploadImage(e.photo, `IN_${out?.challanNo || 'UNK'}.jpg`, 'inward') || '';
-          if (validInwardToUpload.length > 1) await delay(800);
+          pUrl = await uploadImage(e.photo, `IN_${out?.challanNo || 'UNK'}.jpg`, 'inward');
+          if (pUrl === null) {
+             console.error(`Skipping sync for Inward ${e.id}: Image upload failed.`);
+             failedInwards.add(e.id);
+             continue;
+          }
+          if (candidatesInward.length > 1) await delay(800);
       }
       
       newInwardRows.push([
         formatDisplayDate(e.date), state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown',
         out ? out.challanNo : '---', state.items.find(i => i.id === e.skuId)?.sku || 'Unknown', 
         e.qty, e.comboQty || '', e.totalWeight, e.pendalWeight, e.materialWeight,
-        e.checkedBy || '', e.enteredBy || '', pUrl, e.remarks || '', timestamp
+        e.checkedBy || '', e.enteredBy || '', pUrl || '', e.remarks || '', timestamp
       ]);
     }
     if (newInwardRows.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.inwardSheetName}!A:N`, valueInputOption: "USER_ENTERED", resource: { values: newInwardRows } });
 
-    // Merging Data for State and Reconciliation
+    // Merging Data:
+    // We must keep entries that failed to sync as 'unsynced' in the new state
     const allVendors = [...existingVendors, ...unsyncedVendors.map(v => ({...v, synced: true}))];
     const allItems = [...existingItems, ...unsyncedItems.map(i => ({...i, synced: true}))];
     const allWorks = [...existingWorks, ...unsyncedWorks.map(w => ({...w, synced: true}))];
     const allUsers = [...existingUsers, ...unsyncedUsers.map(u => ({...u, synced: true}))];
 
-    const finalOutward: OutwardEntry[] = [...existingOutwardRows, ...newOutwardRows].map((r:any) => {
+    // Outward: Existing Sheet Data + New Rows + Failed (Local) Rows
+    const finalOutward: OutwardEntry[] = [
+        ...existingOutwardRows, 
+        ...newOutwardRows
+    ].map((r:any) => {
       const challanNo = r[2];
       const localMatch = state.outwardEntries.find(o => o.challanNo === challanNo);
       const statusFromSheet = r[14] as 'OPEN' | 'COMPLETED';
-      // Prioritize local 'COMPLETED' (Short Close) or Sheet 'COMPLETED' (Synced from other device)
       const effectiveStatus = (localMatch?.status === 'COMPLETED' || statusFromSheet === 'COMPLETED') ? 'COMPLETED' : 'OPEN';
 
       return {
@@ -345,8 +392,19 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         remarks: r[13], status: effectiveStatus, synced: true
       };
     });
+    
+    // Add back the failed entries (preserving their local state and unsynced status)
+    candidatesOutward.forEach(e => {
+        if (failedOutwards.has(e.id)) {
+            finalOutward.push({ ...e, synced: false });
+        }
+    });
 
-    const finalInward: InwardEntry[] = [...existingInwardRows, ...newInwardRows].map((r:any) => {
+    // Inward:
+    const finalInward: InwardEntry[] = [
+        ...existingInwardRows, 
+        ...newInwardRows
+    ].map((r:any) => {
       const outChallan = r[2];
       const localMatch = state.inwardEntries.find(i => {
          const out = state.outwardEntries.find(o => o.id === i.outwardChallanId);
@@ -362,6 +420,12 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         totalWeight: parseFloat(r[6] || 0), pendalWeight: parseFloat(r[7] || 0), materialWeight: parseFloat(r[8] || 0),
         checkedBy: r[9], enteredBy: r[10], photoUrl: r[11], remarks: r[12], synced: true
       };
+    });
+    
+    candidatesInward.forEach(e => {
+        if (failedInwards.has(e.id)) {
+            finalInward.push({ ...e, synced: false });
+        }
     });
 
     // --- RECONCILIATION SHEET UPDATE ---
@@ -402,7 +466,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
             skuName,
             o.qty,
             inQty,
-            Math.max(0, o.qty - inQty), // Short/Pending
+            Math.max(0, o.qty - inQty),
             o.comboQty || 0,
             inCombo,
             Math.max(0, (o.comboQty || 0) - inCombo),
@@ -419,7 +483,6 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     });
 
     if (reconRows.length) {
-        // Overwrite the reconciliation sheet starting from row 2
         await gapi.client.sheets.spreadsheets.values.update({
             spreadsheetId: SHEETS_CONFIG.spreadsheetId, 
             range: `${SHEETS_CONFIG.reconciliationSheetName}!A2:V${reconRows.length + 1}`,
@@ -429,6 +492,11 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
     }
 
     onUpdateState({ vendors: allVendors, items: allItems, workTypes: allWorks, users: allUsers, outwardEntries: finalOutward, inwardEntries: finalInward });
+    
+    if (failedOutwards.size > 0 || failedInwards.size > 0) {
+        return { success: false, message: `Synced with errors. ${failedOutwards.size + failedInwards.size} images failed to upload. Retrying automatically next time.` };
+    }
+    
     return { success: true, message: `Sync Complete: ${timestamp}` };
   } catch (error: any) { 
     console.error("Sync Process Error:", error);
