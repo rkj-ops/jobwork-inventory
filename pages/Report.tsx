@@ -38,7 +38,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
   const [dateTo, setDateTo] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'qty' | 'overdue'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [hideCompleted, setHideCompleted] = useState(false);
+  // Default to true to show only pending entries by default
+  const [hideCompleted, setHideCompleted] = useState(true);
 
   const markJobComplete = (outwardId: string) => {
     if(!updateState) return;
