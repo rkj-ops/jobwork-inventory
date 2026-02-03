@@ -10,6 +10,7 @@ interface ReportRow extends OutwardEntry {
   vendorName: string;
   vendorCode: string;
   itemSku: string;
+  itemDesc: string;
   workName: string;
   inQty: number;
   inComboQty: number;
@@ -161,6 +162,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
             vendorName: vendor?.name || 'Unknown',
             vendorCode: vendor?.code || 'UNK',
             itemSku: item?.sku || 'UNK',
+            itemDesc: item?.description || '',
             workName: work?.name || '',
             inQty,
             inComboQty,
@@ -178,7 +180,9 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
         rows = rows.filter(r => 
             r.vendorName.toLowerCase().includes(lower) || 
             r.vendorCode.toLowerCase().includes(lower) || 
-            r.challanNo.toLowerCase().includes(lower)
+            r.challanNo.toLowerCase().includes(lower) ||
+            r.itemSku.toLowerCase().includes(lower) ||
+            r.itemDesc.toLowerCase().includes(lower)
         );
     }
     if (dateFrom) rows = rows.filter(r => r.date >= dateFrom);
@@ -216,6 +220,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                           <p><strong>Work:</strong> {detailView.workName}</p>
                           <p><strong>Sent Date:</strong> {formatDisplayDate(detailView.date)}</p>
                           <p><strong>Status:</strong> <span className={`font-bold ${detailView.status === 'COMPLETED' ? 'text-green-600' : 'text-orange-600'}`}>{detailView.status || 'OPEN'}</span></p>
+                          <p><strong>Item:</strong> {detailView.itemSku}</p>
+                          {detailView.itemDesc && <p className="col-span-2 text-xs italic text-slate-500">{detailView.itemDesc}</p>}
                           <p><strong>Sent Qty:</strong> {detailView.qty} (Combo: {detailView.comboQty ?? 0})</p>
                           <p><strong>Recv Qty:</strong> {detailView.inQty} (Combo: {detailView.inComboQty})</p>
                           <p><strong>Out. By:</strong> {detailView.enteredBy || 'Admin'}</p>
@@ -285,7 +291,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="relative">
                 <Search className="absolute left-3 top-3 text-slate-400" size={18} />
-                <input className="w-full pl-10 p-2 border rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none" placeholder="Search Vendor Name, Challan..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                <input className="w-full pl-10 p-2 border rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none" placeholder="Search Vendor, Challan, Item SKU..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
             </div>
             <div className="flex gap-2">
                 <input type="date" className="p-2 border rounded-lg flex-1 text-xs" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
