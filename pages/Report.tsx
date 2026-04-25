@@ -233,6 +233,11 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                           <p><strong>Out. By:</strong> {detailView.enteredBy || 'Admin'}</p>
                           <p><strong>Out. Chk By:</strong> {detailView.checkedBy || '---'}</p>
                         </div>
+                        {detailView.remarks && (
+                          <div className="mt-2 pt-2 border-t border-blue-200">
+                            <p><strong>Outward Remarks:</strong> <span className="text-slate-600">{detailView.remarks}</span></p>
+                          </div>
+                        )}
                         {detailView.recvDates.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-blue-200">
                              <p><strong>Received Dates:</strong> {detailView.recvDates.map(d => formatDisplayDate(d)).join(', ')}</p>
@@ -255,6 +260,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                                       <th className="p-2 text-right">Qty</th>
                                       <th className="p-2 text-left">Ent. By</th>
                                       <th className="p-2 text-left">Chk. By</th>
+                                      <th className="p-2 text-left">Remarks</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -264,6 +270,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                                             <td className="p-2 text-right font-bold">{i.qty}</td>
                                             <td className="p-2 text-slate-500 text-[10px] uppercase font-bold">{i.enteredBy || '---'}</td>
                                             <td className="p-2 text-slate-500 text-[10px] uppercase font-bold">{i.checkedBy || '---'}</td>
+                                            <td className="p-2 text-slate-500 text-[11px] italic">{i.remarks || '---'}</td>
                                         </tr>
                                     ))}
                                 </tbody>
