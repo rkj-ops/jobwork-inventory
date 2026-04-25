@@ -13,6 +13,12 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
   const item = state.items.find(i => i.id === entry.skuId);
   const work = state.workTypes.find(w => w.id === entry.workId);
 
+  // Build display strings with fallback to raw ID so something always prints
+  const vendorName = vendor?.name || '—';
+  const vendorCode = vendor?.code || '';
+  const itemSku = item?.sku || '—';
+  const workName = work?.name || '—';
+
   return (
     <div id="print-area" className="flex flex-col h-full bg-white text-black p-8 font-serif fixed inset-0 z-[100] overflow-auto">
       <div className="text-center border-b-2 border-black pb-4 mb-4">
@@ -24,7 +30,7 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
       <div className="flex justify-between mb-6 text-sm">
         <div className="flex-1">
           <p className="text-xs text-gray-500 uppercase">Vendor</p>
-          <p className="text-2xl font-bold uppercase">{vendor?.name} ({vendor?.code})</p>
+          <p className="text-2xl font-bold uppercase">{vendorName}{vendorCode ? ` (${vendorCode})` : ''}</p>
         </div>
         <div className="text-right flex-1">
           <div className="mb-2">
@@ -33,7 +39,7 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
           </div>
           <div className="mb-2">
              <p className="text-xs text-gray-500 uppercase">Work Type</p>
-             <p className="text-xl font-bold uppercase">{work?.name}</p>
+             <p className="text-xl font-bold uppercase">{workName}</p>
           </div>
           <p><strong>Date:</strong> {formatDisplayDate(entry.date)}</p>
         </div>
@@ -52,7 +58,7 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
         </thead>
         <tbody>
           <tr>
-            <td className="border border-black p-4 text-center">{item?.sku}</td>
+            <td className="border border-black p-4 text-center">{itemSku}</td>
             <td className="border border-black p-4 text-center font-bold">{entry.qty}</td>
             <td className="border border-black p-4 text-center">{entry.comboQty || '-'}</td>
             <td className="border border-black p-4 text-center">{entry.totalWeight}</td>

@@ -33,6 +33,7 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
 
   const [skuId, setSkuId] = useState('');
   const [lastSaved, setLastSaved] = useState<OutwardEntry | null>(null);
+  const [printState, setPrintState] = useState<AppState | null>(null); // snapshot at save time
   const [isPrinting, setIsPrinting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null); // Object URL for immediate preview
   const [previewUrl2, setPreviewUrl2] = useState<string | null>(null);
@@ -133,6 +134,7 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
 
     onSave(newEntry);
     setLastSaved(newEntry);
+    setPrintState({ ...state }); // snapshot current state before any sync can regenerate IDs
     
     // Reset Form
     setFormData({
@@ -152,7 +154,7 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
   const vendorOptions = state.vendors.map(v => ({ id: v.id, label: v.name, sublabel: v.code }));
   const skuOptions = state.items.map(i => ({ id: i.id, label: i.sku, sublabel: i.description }));
 
-  if (isPrinting && lastSaved) return <PrintChallan entry={lastSaved} state={state} onClose={() => setIsPrinting(false)} />;
+  if (isPrinting && lastSaved) return <PrintChallan entry={lastSaved} state={printState || state} onClose={() => setIsPrinting(false)} />;
 
   if (state.vendors.length === 0) return <div className="p-8 text-center text-slate-500"><AlertCircle className="mx-auto mb-2 text-orange-500" size={48} /><p>Please add Vendors in Masters first.</p></div>;
 

@@ -194,7 +194,7 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
     let attempts = 0;
     while (attempts < 3) {
         try {
-            const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
+            const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,webContentLink', {
                 method: 'POST',
                 headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
                 body: form
@@ -202,8 +202,19 @@ const uploadImage = async (base64String: string, fileName: string, targetFolder:
             
             if (response.ok) {
                 const data = await response.json();
-                console.log(`Uploaded ${fileName} to ${data.webViewLink}`);
-                return data.webViewLink || null;
+                const fileId = data.id;
+                // Make file publicly readable so <img> can embed it without auth
+                try {
+                  await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'anyone', role: 'reader' })
+                  });
+                } catch (_) { /* non-critical, continue */ }
+                // Return direct embeddable thumbnail URL
+                const embedUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`;
+                console.log(`Uploaded ${fileName}: ${embedUrl}`);
+                return embedUrl;
             } else {
                const errText = await response.text();
                console.warn(`Upload fail ${response.status}: ${errText}`);
