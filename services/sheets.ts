@@ -253,7 +253,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
       `${SHEETS_CONFIG.vendorSheetName}!A:B`,
       `${SHEETS_CONFIG.itemSheetName}!A:B`,
       `${SHEETS_CONFIG.workSheetName}!A:A`,
-      `${SHEETS_CONFIG.outwardSheetName}!A:P`, 
+      `${SHEETS_CONFIG.outwardSheetName}!A:Q`, 
       `${SHEETS_CONFIG.inwardSheetName}!A:N`, 
       `${SHEETS_CONFIG.userSheetName}!A:A`
     ];
@@ -328,6 +328,17 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
           }
           if (candidatesOutward.length > 1) await delay(800); 
       }
+
+      let lUrl: string | null | undefined = e.labelImageUrl;
+      if (!lUrl && e.labelImage) {
+          lUrl = await uploadImage(e.labelImage, `LBL_${e.challanNo}.jpg`, 'outward');
+          if (lUrl === null) {
+              console.error(`Skipping sync for ${e.challanNo}: Label image upload failed.`);
+              failedOutwards.add(e.id);
+              continue; 
+          }
+          if (candidatesOutward.length > 1) await delay(800); 
+      }
       
       newOutwardRows.push([
         formatDisplayDate(e.date), state.vendors.find(v => v.id === e.vendorId)?.name || 'Unknown',
@@ -335,10 +346,10 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         e.qty, e.comboQty || '', e.totalWeight, e.pendalWeight, e.materialWeight, 
         e.checkedBy || '', e.enteredBy || '', pUrl || '', 
         state.workTypes.find(w => w.id === e.workId)?.name || '', 
-        e.remarks || '', e.status || 'OPEN', timestamp
+        e.remarks || '', e.status || 'OPEN', timestamp, lUrl || ''
       ]);
     }
-    if (newOutwardRows.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.outwardSheetName}!A:P`, valueInputOption: "USER_ENTERED", resource: { values: newOutwardRows } });
+    if (newOutwardRows.length) await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEETS_CONFIG.spreadsheetId, range: `${SHEETS_CONFIG.outwardSheetName}!A:Q`, valueInputOption: "USER_ENTERED", resource: { values: newOutwardRows } });
 
     const newInwardRows: any[] = [];
     const failedInwards = new Set<string>();
@@ -389,7 +400,7 @@ export const syncDataToSheets = async (state: AppState, onUpdateState: (newState
         qty: parseFloat(r[4] || 0), comboQty: parseFloat(r[5] || 0),
         totalWeight: parseFloat(r[6] || 0), pendalWeight: parseFloat(r[7] || 0), materialWeight: parseFloat(r[8] || 0),
         checkedBy: r[9] || '', enteredBy: r[10] || '', photoUrl: r[11] || undefined, workId: allWorks.find(w => w.name === r[12])?.id || '',
-        remarks: r[13], status: effectiveStatus, synced: true
+        remarks: r[13], status: effectiveStatus, labelImageUrl: r[16] || undefined, synced: true
       };
     });
     

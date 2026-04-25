@@ -50,8 +50,8 @@ export const SearchableList: React.FC<{
 
   const selectedItem = items.find(i => i.id === value);
   const filteredItems = items.filter(i => 
-    i.label.toLowerCase().includes(search.toLowerCase()) || 
-    i.sublabel?.toLowerCase().includes(search.toLowerCase())
+    (i.label || '').toLowerCase().includes(search.toLowerCase()) || 
+    (i.sublabel || '').toLowerCase().includes(search.toLowerCase())
   );
 
   useEffect(() => {

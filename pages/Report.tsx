@@ -14,6 +14,7 @@ interface ReportRow extends OutwardEntry {
   workName: string;
   inQty: number;
   inComboQty: number;
+  inWeight: number;
   shortQty: number;
   shortComboQty: number;
   pending: number;
@@ -144,6 +145,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
         const inwards = state.inwardEntries.filter(i => i.outwardChallanId === o.id);
         const inQty = inwards.reduce((sum, i) => sum + i.qty, 0);
         const inComboQty = inwards.reduce((sum, i) => sum + (i.comboQty || 0), 0);
+        const inWeight = inwards.reduce((sum, i) => sum + (i.totalWeight || 0), 0);
         
         const recvDates = Array.from(new Set<string>(inwards.map(i => i.date.split('T')[0]))).sort();
         const lastRecvDate = recvDates.length > 0 ? recvDates[recvDates.length - 1] : null;
@@ -167,6 +169,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
             workName: work?.name || '',
             inQty,
             inComboQty,
+            inWeight,
             shortQty,
             shortComboQty,
             pending,
@@ -225,6 +228,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                           {detailView.itemDesc && <p className="col-span-2 text-xs italic text-slate-500">{detailView.itemDesc}</p>}
                           <p><strong>Sent Qty:</strong> {detailView.qty} (Combo: {detailView.comboQty ?? 0})</p>
                           <p><strong>Recv Qty:</strong> {detailView.inQty} (Combo: {detailView.inComboQty})</p>
+                          <p><strong>Sent Weight:</strong> {detailView.totalWeight || 0}</p>
+                          <p><strong>Recv Weight:</strong> {detailView.inWeight || 0}</p>
                           <p><strong>Out. By:</strong> {detailView.enteredBy || 'Admin'}</p>
                           <p><strong>Out. Chk By:</strong> {detailView.checkedBy || '---'}</p>
                         </div>

@@ -26,6 +26,7 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
     workId: '',
     remarks: '',
     photo: '', // Base64 for upload
+    labelImage: '',
     enteredBy: '',
     checkedBy: ''
   });
@@ -34,16 +35,17 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
   const [lastSaved, setLastSaved] = useState<OutwardEntry | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null); // Object URL for immediate preview
-  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [previewUrl2, setPreviewUrl2] = useState<string | null>(null);
+  const [isProcessingImage1, setIsProcessingImage1] = useState(false);
+  const [isProcessingImage2, setIsProcessingImage2] = useState(false);
 
   // Cleanup object URLs to prevent memory leaks
   useEffect(() => {
     return () => {
-        if (previewUrl && !previewUrl.startsWith('data:')) {
-            URL.revokeObjectURL(previewUrl);
-        }
+        if (previewUrl && !previewUrl.startsWith('data:')) URL.revokeObjectURL(previewUrl);
+        if (previewUrl2 && !previewUrl2.startsWith('data:')) URL.revokeObjectURL(previewUrl2);
     };
-  }, [previewUrl]);
+  }, [previewUrl, previewUrl2]);
 
   useEffect(() => {
     const mat = (parseFloat(formData.totalWeight) || 0) - (parseFloat(formData.pendalWeight) || 0);
@@ -63,24 +65,32 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
 
   const challanPreview = useMemo(() => generateChallanNo(formData.vendorId), [formData.vendorId, state.outwardEntries]);
 
-  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>, isSecond = false) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      
-      // 1. Immediate Preview using Object URL (Fast & Low Memory)
       const objectUrl = URL.createObjectURL(file);
-      setPreviewUrl(objectUrl);
       
-      // 2. Background Compression
-      setIsProcessingImage(true);
+      if (isSecond) {
+        setPreviewUrl2(objectUrl);
+        setIsProcessingImage2(true);
+      } else {
+        setPreviewUrl(objectUrl);
+        setIsProcessingImage1(true);
+      }
+      
       try {
           // PASS FILE DIRECTLY - Do not read as DataURL first
           const compressed = await compressImage(file, 800, 0.6);
-          setFormData(prev => ({ ...prev, photo: compressed }));
+          if (isSecond) {
+            setFormData(prev => ({ ...prev, labelImage: compressed }));
+          } else {
+            setFormData(prev => ({ ...prev, photo: compressed }));
+          }
       } catch (err) {
           console.error("Compression failed", err);
       } finally {
-          setIsProcessingImage(false);
+          if (isSecond) setIsProcessingImage2(false);
+          else setIsProcessingImage1(false);
       }
     }
   };
@@ -127,10 +137,11 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
     // Reset Form
     setFormData({
       date: today, vendorId: '', qty: '', comboQty: '', totalWeight: '', pendalWeight: '', materialWeight: '',
-      workId: '', remarks: '', photo: '', enteredBy: '', checkedBy: ''
+      workId: '', remarks: '', photo: '', labelImage: '', enteredBy: '', checkedBy: ''
     });
     setSkuId('');
     setPreviewUrl(null);
+    setPreviewUrl2(null);
   };
 
   const handlePrint = () => {
@@ -209,34 +220,54 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
            </Select>
         </div>
 
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 mb-1 font-bold">Photo Attachment</label>
-          <div className="flex gap-4 items-center">
-              <label className="flex-1 flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 border-slate-300 transition-colors bg-slate-50 active:bg-slate-100">
-                 <div className="flex gap-2 mb-1">
-                   {isProcessingImage ? <RefreshCw className="text-blue-500 animate-spin" size={20}/> : (
-                     <>
-                        <Camera className="text-slate-400" size={20}/>
-                        <Upload className="text-slate-400" size={20}/>
-                     </>
-                   )}
-                 </div>
-                 <span className="text-xs font-bold text-slate-500 uppercase">
-                    {isProcessingImage ? 'Processing...' : (previewUrl ? 'Change Photo' : 'Capture / Gallery')}
-                 </span>
-                 <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
-              </label>
-              {previewUrl && (
-                  <div className="relative group cursor-pointer" onClick={() => {}}>
-                    <img src={previewUrl} className="h-20 w-20 rounded-lg border border-slate-200 object-cover shadow-sm bg-white" />
-                  </div>
-              )}
+        <div className="mb-4 grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1 font-bold">Weight Image</label>
+            <div className="flex flex-col gap-2 relative">
+                <label className="flex-1 flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 border-slate-300 transition-colors bg-slate-50 active:bg-slate-100 min-h-[100px]">
+                   <div className="flex gap-2 mb-1">
+                     {isProcessingImage1 ? <RefreshCw className="text-blue-500 animate-spin" size={20}/> : (
+                       <><Camera className="text-slate-400" size={20}/><Upload className="text-slate-400" size={20}/></>
+                     )}
+                   </div>
+                   <span className="text-[10px] text-center font-bold text-slate-500 uppercase">
+                      {isProcessingImage1 ? 'Processing...' : (previewUrl ? 'Change Photo' : 'Capture / Gallery')}
+                   </span>
+                   <input type="file" accept="image/*" className="hidden" onChange={e => handlePhoto(e, false)} />
+                </label>
+                {previewUrl && (
+                    <div className="absolute top-2 right-2 cursor-pointer shadow-md rounded-lg overflow-hidden border border-slate-200">
+                      <img src={previewUrl} className="h-10 w-10 object-cover bg-white" />
+                    </div>
+                )}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1 font-bold">Label Image</label>
+            <div className="flex flex-col gap-2 relative">
+                <label className="flex-1 flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer hover:bg-slate-50 border-slate-300 transition-colors bg-slate-50 active:bg-slate-100 min-h-[100px]">
+                   <div className="flex gap-2 mb-1">
+                     {isProcessingImage2 ? <RefreshCw className="text-blue-500 animate-spin" size={20}/> : (
+                       <><Camera className="text-slate-400" size={20}/><Upload className="text-slate-400" size={20}/></>
+                     )}
+                   </div>
+                   <span className="text-[10px] text-center font-bold text-slate-500 uppercase">
+                      {isProcessingImage2 ? 'Processing...' : (previewUrl2 ? 'Change Photo' : 'Capture / Gallery')}
+                   </span>
+                   <input type="file" accept="image/*" className="hidden" onChange={e => handlePhoto(e, true)} />
+                </label>
+                {previewUrl2 && (
+                    <div className="absolute top-2 right-2 cursor-pointer shadow-md rounded-lg overflow-hidden border border-slate-200">
+                      <img src={previewUrl2} className="h-10 w-10 object-cover bg-white" />
+                    </div>
+                )}
+            </div>
           </div>
         </div>
 
         <Input label="Remarks" value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} />
-        <Button onClick={handleSubmit} disabled={isProcessingImage}>
-           {isProcessingImage ? 'Processing Image...' : <><Save className="mr-2" size={18} /> Save Entry</>}
+        <Button onClick={handleSubmit} disabled={isProcessingImage1 || isProcessingImage2}>
+           {isProcessingImage1 || isProcessingImage2 ? 'Processing Images...' : <><Save className="mr-2" size={18} /> Save Entry</>}
         </Button>
       </Card>
     </div>

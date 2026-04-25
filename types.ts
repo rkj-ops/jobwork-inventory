@@ -38,6 +38,8 @@ export interface OutwardEntry {
   workId: string;
   photo?: string;
   photoUrl?: string;
+  labelImage?: string;
+  labelImageUrl?: string;
   remarks?: string;
   enteredBy?: string;
   checkedBy?: string;
