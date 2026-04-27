@@ -70,7 +70,7 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
 
       <div className="mb-4">
         <p className="font-bold text-xs uppercase mb-1">Remarks</p>
-        <p className="border-b border-dotted border-black p-2 min-h-[40px]">{entry.remarks || ''}</p>
+        <p className="border-b border-dotted border-black p-2 min-h-[20px]">{entry.remarks || ''}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-8 mt-4 mb-4 justify-center">
