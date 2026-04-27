@@ -73,22 +73,22 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
         <p className="border-b border-dotted border-black p-2 min-h-[40px]">{entry.remarks || ''}</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-8 mt-6 mb-8 justify-center">
+      <div className="grid grid-cols-2 gap-8 mt-4 mb-4 justify-center">
         {entry.photoUrl || entry.photo ? (
           <div className="text-center flex flex-col items-center">
             <p className="font-bold text-xs uppercase mb-2">Weight Image</p>
-            <img src={entry.photoUrl || entry.photo} className="max-h-[400px] w-auto object-contain border border-black p-1" />
+            <img src={entry.photoUrl || entry.photo} className="max-h-[260px] w-auto object-contain border border-black p-1" />
           </div>
         ) : <div />}
         {entry.labelImageUrl || entry.labelImage ? (
           <div className="text-center flex flex-col items-center">
             <p className="font-bold text-xs uppercase mb-2">Label Image</p>
-            <img src={entry.labelImageUrl || entry.labelImage} className="max-h-[400px] w-auto object-contain border border-black p-1" />
+            <img src={entry.labelImageUrl || entry.labelImage} className="max-h-[260px] w-auto object-contain border border-black p-1" />
           </div>
         ) : <div />}
       </div>
 
-      <div className="grid grid-cols-3 gap-8 mt-auto pt-16 text-xs font-bold uppercase text-center">
+      <div className="grid grid-cols-3 gap-8 mt-auto pt-8 text-xs font-bold uppercase text-center">
         <div className="border-t border-black pt-2">
            <div className="mb-1">Entered By</div>
            <div className="font-normal normal-case">{entry.enteredBy || 'Admin'}</div>
