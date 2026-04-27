@@ -77,13 +77,23 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
         {entry.photoUrl || entry.photo ? (
           <div className="text-center flex flex-col items-center">
             <p className="font-bold text-xs uppercase mb-2">Weight Image</p>
-            <div className="flex items-center justify-center h-[260px] w-[260px]">
+            <div className="relative w-[340px] h-[450px]">
               <img 
                 src={entry.photoUrl || entry.photo} 
-                className="max-h-[260px] max-w-[260px] object-contain border border-black p-1 transition-transform" 
+                className="absolute top-1/2 left-1/2 border border-black p-1 transition-transform object-contain" 
+                style={{
+                   width: 'auto',
+                   height: 'auto',
+                   maxWidth: '340px', 
+                   maxHeight: '450px', 
+                   transform: 'translate(-50%, -50%)'
+                }}
                 onLoad={(e) => {
-                  if (e.currentTarget.naturalWidth > e.currentTarget.naturalHeight) {
-                    e.currentTarget.style.transform = 'rotate(-90deg)';
+                  const img = e.currentTarget;
+                  if (img.naturalWidth > img.naturalHeight) {
+                    img.style.maxWidth = '450px';
+                    img.style.maxHeight = '340px';
+                    img.style.transform = 'translate(-50%, -50%) rotate(-90deg)';
                   }
                 }}
               />
@@ -93,13 +103,23 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
         {entry.labelImageUrl || entry.labelImage ? (
           <div className="text-center flex flex-col items-center">
             <p className="font-bold text-xs uppercase mb-2">Label Image</p>
-            <div className="flex items-center justify-center h-[260px] w-[260px]">
+            <div className="relative w-[340px] h-[450px]">
               <img 
                 src={entry.labelImageUrl || entry.labelImage} 
-                className="max-h-[260px] max-w-[260px] object-contain border border-black p-1 transition-transform" 
+                className="absolute top-1/2 left-1/2 border border-black p-1 transition-transform object-contain" 
+                style={{
+                   width: 'auto',
+                   height: 'auto',
+                   maxWidth: '340px', 
+                   maxHeight: '450px', 
+                   transform: 'translate(-50%, -50%)'
+                }}
                 onLoad={(e) => {
-                  if (e.currentTarget.naturalWidth > e.currentTarget.naturalHeight) {
-                    e.currentTarget.style.transform = 'rotate(-90deg)';
+                  const img = e.currentTarget;
+                  if (img.naturalWidth > img.naturalHeight) {
+                    img.style.maxWidth = '450px';
+                    img.style.maxHeight = '340px';
+                    img.style.transform = 'translate(-50%, -50%) rotate(-90deg)';
                   }
                 }}
               />
