@@ -128,16 +128,9 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
         ) : <div />}
       </div>
 
-      <div className="grid grid-cols-3 gap-8 mt-auto pt-8 text-xs font-bold uppercase text-center">
-        <div className="border-t border-black pt-2">
-          <div className="mb-1">Entered By</div>
-          <div className="font-normal normal-case">{entry.enteredBy || 'Admin'}</div>
-        </div>
-        <div className="border-t border-black pt-2">
-          <div className="mb-1">Checked By</div>
-          <div className="font-normal normal-case">{entry.checkedBy || '-'}</div>
-        </div>
-        <div className="border-t border-black pt-2">Vendor Signature</div>
+      <div className="mt-auto pt-4 text-[10px] font-bold uppercase flex justify-between text-gray-600">
+        <p>Entered By: <span className="font-normal normal-case text-black ml-1">{entry.enteredBy || 'Admin'}</span></p>
+        <p>Checked By: <span className="font-normal normal-case text-black ml-1">{entry.checkedBy || '-'}</span></p>
       </div>
 
       <button onClick={onClose} className="no-print fixed top-4 right-4 bg-red-600 text-white p-2 rounded-full shadow-lg hover:bg-red-700 z-50">
