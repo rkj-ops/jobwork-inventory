@@ -34,12 +34,12 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
         </div>
         <div className="text-right flex-1">
           <div className="mb-2">
-             <p className="text-xs text-gray-500 uppercase">Challan No</p>
-             <p className="text-2xl font-bold uppercase">{entry.challanNo}</p>
+            <p className="text-xs text-gray-500 uppercase">Challan No</p>
+            <p className="text-2xl font-bold uppercase">{entry.challanNo}</p>
           </div>
           <div className="mb-2">
-             <p className="text-xs text-gray-500 uppercase">Work Type</p>
-             <p className="text-xl font-bold uppercase">{workName}</p>
+            <p className="text-xs text-gray-500 uppercase">Work Type</p>
+            <p className="text-xl font-bold uppercase">{workName}</p>
           </div>
           <p><strong>Date:</strong> {formatDisplayDate(entry.date)}</p>
         </div>
@@ -77,21 +77,21 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
         {entry.photoUrl || entry.photo ? (
           <div className="text-center flex flex-col items-center">
             <p className="font-bold text-xs uppercase mb-2">Weight Image</p>
-            <div className="relative w-[340px] h-[450px]">
-              <img 
-                src={entry.photoUrl || entry.photo} 
-                className="absolute top-1/2 left-1/2 border border-black p-1 transition-transform object-contain" 
+            <div className="relative w-[340px] h-[400px]">
+              <img
+                src={entry.photoUrl || entry.photo}
+                className="absolute top-1/2 left-1/2 border border-black p-1 transition-transform object-contain"
                 style={{
-                   width: 'auto',
-                   height: 'auto',
-                   maxWidth: '340px', 
-                   maxHeight: '450px', 
-                   transform: 'translate(-50%, -50%)'
+                  width: 'auto',
+                  height: 'auto',
+                  maxWidth: '340px',
+                  maxHeight: '400px',
+                  transform: 'translate(-50%, -50%)'
                 }}
                 onLoad={(e) => {
                   const img = e.currentTarget;
                   if (img.naturalWidth > img.naturalHeight) {
-                    img.style.maxWidth = '450px';
+                    img.style.maxWidth = '400px';
                     img.style.maxHeight = '340px';
                     img.style.transform = 'translate(-50%, -50%) rotate(-90deg)';
                   }
@@ -103,21 +103,21 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
         {entry.labelImageUrl || entry.labelImage ? (
           <div className="text-center flex flex-col items-center">
             <p className="font-bold text-xs uppercase mb-2">Label Image</p>
-            <div className="relative w-[340px] h-[450px]">
-              <img 
-                src={entry.labelImageUrl || entry.labelImage} 
-                className="absolute top-1/2 left-1/2 border border-black p-1 transition-transform object-contain" 
+            <div className="relative w-[340px] h-[400px]">
+              <img
+                src={entry.labelImageUrl || entry.labelImage}
+                className="absolute top-1/2 left-1/2 border border-black p-1 transition-transform object-contain"
                 style={{
-                   width: 'auto',
-                   height: 'auto',
-                   maxWidth: '340px', 
-                   maxHeight: '450px', 
-                   transform: 'translate(-50%, -50%)'
+                  width: 'auto',
+                  height: 'auto',
+                  maxWidth: '340px',
+                  maxHeight: '400px',
+                  transform: 'translate(-50%, -50%)'
                 }}
                 onLoad={(e) => {
                   const img = e.currentTarget;
                   if (img.naturalWidth > img.naturalHeight) {
-                    img.style.maxWidth = '450px';
+                    img.style.maxWidth = '400px';
                     img.style.maxHeight = '340px';
                     img.style.transform = 'translate(-50%, -50%) rotate(-90deg)';
                   }
@@ -130,12 +130,12 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
 
       <div className="grid grid-cols-3 gap-8 mt-auto pt-8 text-xs font-bold uppercase text-center">
         <div className="border-t border-black pt-2">
-           <div className="mb-1">Entered By</div>
-           <div className="font-normal normal-case">{entry.enteredBy || 'Admin'}</div>
+          <div className="mb-1">Entered By</div>
+          <div className="font-normal normal-case">{entry.enteredBy || 'Admin'}</div>
         </div>
         <div className="border-t border-black pt-2">
-           <div className="mb-1">Checked By</div>
-           <div className="font-normal normal-case">{entry.checkedBy || '-'}</div>
+          <div className="mb-1">Checked By</div>
+          <div className="font-normal normal-case">{entry.checkedBy || '-'}</div>
         </div>
         <div className="border-t border-black pt-2">Vendor Signature</div>
       </div>
