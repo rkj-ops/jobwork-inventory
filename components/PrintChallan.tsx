@@ -143,7 +143,7 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
       <button onClick={onClose} className="no-print fixed top-4 right-4 bg-red-600 text-white p-2 rounded-full shadow-lg hover:bg-red-700 z-50">
         <X size={24} />
       </button>
-    </div>
+    </div >
   );
 };
 
