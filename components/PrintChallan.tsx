@@ -73,17 +73,17 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
         <p className="border-b border-dotted border-black p-2 min-h-[40px]">{entry.remarks || ''}</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mt-2 mb-4">
+      <div className="grid grid-cols-2 gap-8 mt-6 mb-8 justify-center">
         {entry.photoUrl || entry.photo ? (
           <div className="text-center flex flex-col items-center">
-            <p className="font-bold text-[10px] uppercase mb-1">Weight Image</p>
-            <img src={entry.photoUrl || entry.photo} className="max-h-40 object-contain border border-black p-1" />
+            <p className="font-bold text-xs uppercase mb-2">Weight Image</p>
+            <img src={entry.photoUrl || entry.photo} className="max-h-[400px] w-auto object-contain border border-black p-1" />
           </div>
         ) : <div />}
         {entry.labelImageUrl || entry.labelImage ? (
           <div className="text-center flex flex-col items-center">
-            <p className="font-bold text-[10px] uppercase mb-1">Label Image</p>
-            <img src={entry.labelImageUrl || entry.labelImage} className="max-h-40 object-contain border border-black p-1" />
+            <p className="font-bold text-xs uppercase mb-2">Label Image</p>
+            <img src={entry.labelImageUrl || entry.labelImage} className="max-h-[400px] w-auto object-contain border border-black p-1" />
           </div>
         ) : <div />}
       </div>

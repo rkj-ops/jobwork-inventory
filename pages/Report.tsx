@@ -147,7 +147,8 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
         const inComboQty = inwards.reduce((sum, i) => sum + (i.comboQty || 0), 0);
         const inWeight = inwards.reduce((sum, i) => sum + (i.totalWeight || 0), 0);
         
-        const recvDates = Array.from(new Set<string>(inwards.map(i => i.date.split('T')[0]))).sort();
+        const sortedInwards = [...inwards].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const recvDates = Array.from(new Set<string>(sortedInwards.map(i => formatDisplayDate(i.date))));
         const lastRecvDate = recvDates.length > 0 ? recvDates[recvDates.length - 1] : null;
 
         const vendor = state.vendors.find(v => v.id === o.vendorId);
@@ -240,7 +241,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                         )}
                         {detailView.recvDates.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-blue-200">
-                             <p><strong>Received Dates:</strong> {detailView.recvDates.map(d => formatDisplayDate(d)).join(', ')}</p>
+                             <p><strong>Received Dates:</strong> {detailView.recvDates.join(', ')}</p>
                           </div>
                         )}
                         {detailView.status === 'COMPLETED' && (detailView.shortQty > 0 || detailView.shortComboQty > 0) && (
@@ -363,7 +364,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                             {r.recvDates.length > 0 && (
                                 <div className="flex items-center text-[10px] text-blue-600 mt-1">
                                     <Calendar size={10} className="mr-1"/> 
-                                    <span className="truncate max-w-[150px]">{r.recvDates.map(d => formatDisplayDate(d)).join(', ')}</span>
+                                    <span className="truncate max-w-[150px]">{r.recvDates.join(', ')}</span>
                                 </div>
                             )}
                         </div>
