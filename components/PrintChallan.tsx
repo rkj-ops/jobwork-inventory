@@ -77,13 +77,33 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
         {entry.photoUrl || entry.photo ? (
           <div className="text-center flex flex-col items-center">
             <p className="font-bold text-xs uppercase mb-2">Weight Image</p>
-            <img src={entry.photoUrl || entry.photo} className="max-h-[260px] w-auto object-contain border border-black p-1" />
+            <div className="flex items-center justify-center h-[260px] w-[260px]">
+              <img 
+                src={entry.photoUrl || entry.photo} 
+                className="max-h-[260px] max-w-[260px] object-contain border border-black p-1 transition-transform" 
+                onLoad={(e) => {
+                  if (e.currentTarget.naturalWidth > e.currentTarget.naturalHeight) {
+                    e.currentTarget.style.transform = 'rotate(-90deg)';
+                  }
+                }}
+              />
+            </div>
           </div>
         ) : <div />}
         {entry.labelImageUrl || entry.labelImage ? (
           <div className="text-center flex flex-col items-center">
             <p className="font-bold text-xs uppercase mb-2">Label Image</p>
-            <img src={entry.labelImageUrl || entry.labelImage} className="max-h-[260px] w-auto object-contain border border-black p-1" />
+            <div className="flex items-center justify-center h-[260px] w-[260px]">
+              <img 
+                src={entry.labelImageUrl || entry.labelImage} 
+                className="max-h-[260px] max-w-[260px] object-contain border border-black p-1 transition-transform" 
+                onLoad={(e) => {
+                  if (e.currentTarget.naturalWidth > e.currentTarget.naturalHeight) {
+                    e.currentTarget.style.transform = 'rotate(-90deg)';
+                  }
+                }}
+              />
+            </div>
           </div>
         ) : <div />}
       </div>
