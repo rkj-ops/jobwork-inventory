@@ -4,6 +4,7 @@ import { Button, Input, Select, Card, SearchableList } from '../components/ui';
 import { Download, Camera, Maximize2, Upload, RefreshCw } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { compressImage } from '../services/sheets';
+import ImageCropperModal from '../components/ImageCropperModal';
 
 interface InwardProps {
   state: AppState;
@@ -24,6 +25,10 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isProcessingImage, setIsProcessingImage] = useState(false);
+
+  // Crop Modal State
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedOutward) {
@@ -55,18 +60,31 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
   const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setPreviewUrl(URL.createObjectURL(file));
+      const objectUrl = URL.createObjectURL(file);
+      setCropImageSrc(objectUrl);
+      setCropModalOpen(true);
+      // Reset input so the same file can be selected again
+      e.target.value = '';
+    }
+  };
 
-      setIsProcessingImage(true);
-      try {
-          // PASS FILE DIRECTLY
-          const compressed = await compressImage(file, 800, 0.6);
-          setFormData(prev => ({ ...prev, photo: compressed }));
-      } catch (err) {
-          console.error(err);
-      } finally {
-          setIsProcessingImage(false);
+  const handleCropComplete = async (croppedFile: File) => {
+    setCropModalOpen(false);
+    const objectUrl = URL.createObjectURL(croppedFile);
+    setPreviewUrl(objectUrl);
+    setIsProcessingImage(true);
+
+    try {
+      const compressed = await compressImage(croppedFile, 800, 0.6);
+      setFormData(prev => ({ ...prev, photo: compressed }));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsProcessingImage(false);
+      if (cropImageSrc && !cropImageSrc.startsWith('data:')) {
+        URL.revokeObjectURL(cropImageSrc);
       }
+      setCropImageSrc(null);
     }
   };
 
@@ -197,6 +215,19 @@ const Inward: React.FC<InwardProps> = ({ state, onSave }) => {
            </Button>
         </Card>
       )}
+
+      <ImageCropperModal
+        isOpen={cropModalOpen}
+        imageSrc={cropImageSrc}
+        onClose={() => {
+          setCropModalOpen(false);
+          if (cropImageSrc && !cropImageSrc.startsWith('data:')) {
+            URL.revokeObjectURL(cropImageSrc);
+          }
+          setCropImageSrc(null);
+        }}
+        onCropComplete={handleCropComplete}
+      />
     </div>
   );
 };

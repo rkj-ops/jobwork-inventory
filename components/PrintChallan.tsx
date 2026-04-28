@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppState, OutwardEntry, formatDisplayDate } from '../types';
 import { X } from 'lucide-react';
 
@@ -6,12 +6,26 @@ interface PrintChallanProps {
   entry: OutwardEntry;
   state: AppState;
   onClose: () => void;
+  autoPrint?: boolean;
 }
 
-const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) => {
+const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose, autoPrint = true }) => {
   const vendor = state.vendors.find(v => v.id === entry.vendorId);
   const item = state.items.find(i => i.id === entry.skuId);
   const work = state.workTypes.find(w => w.id === entry.workId);
+
+  const hasPhoto = !!(entry.photoUrl || entry.photo);
+  const hasLabel = !!(entry.labelImageUrl || entry.labelImage);
+  const [photoLoaded, setPhotoLoaded] = useState(!hasPhoto);
+  const [labelLoaded, setLabelLoaded] = useState(!hasLabel);
+
+  useEffect(() => {
+    if (autoPrint && photoLoaded && labelLoaded) {
+      // Small delay after images load to let the browser paint the rotation
+      const timer = setTimeout(() => window.print(), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [autoPrint, photoLoaded, labelLoaded]);
 
   // Build display strings with fallback to raw ID so something always prints
   const vendorName = vendor?.name || '—';
@@ -95,7 +109,9 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
                     img.style.maxHeight = '340px';
                     img.style.transform = 'translate(-50%, -50%) rotate(-90deg)';
                   }
+                  setPhotoLoaded(true);
                 }}
+                onError={() => setPhotoLoaded(true)}
               />
             </div>
           </div>
@@ -121,7 +137,9 @@ const PrintChallan: React.FC<PrintChallanProps> = ({ entry, state, onClose }) =>
                     img.style.maxHeight = '340px';
                     img.style.transform = 'translate(-50%, -50%) rotate(-90deg)';
                   }
+                  setLabelLoaded(true);
                 }}
+                onError={() => setLabelLoaded(true)}
               />
             </div>
           </div>

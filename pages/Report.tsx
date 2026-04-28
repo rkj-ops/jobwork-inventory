@@ -346,7 +346,7 @@ const Report: React.FC<ReportProps> = ({ state, markSynced, updateState, onManua
                         </div>
                         <div className="flex gap-1">
                           <button onClick={(e) => { e.stopPropagation(); printLabel(r.itemSku); }} className="text-blue-500 bg-blue-50 p-2 rounded-lg hover:bg-blue-100 transition-colors"><ScanBarcode size={18}/></button>
-                          <button onClick={(e) => { e.stopPropagation(); setPrintEntry(r); setTimeout(()=>window.print(),100); }} className="text-green-500 bg-green-50 p-2 rounded-lg hover:bg-green-100 transition-colors"><Printer size={18}/></button>
+                          <button onClick={(e) => { e.stopPropagation(); setPrintEntry(r); }} className="text-green-500 bg-green-50 p-2 rounded-lg hover:bg-green-100 transition-colors"><Printer size={18}/></button>
                           <div className="text-slate-300 p-2 group-hover:text-blue-400 transition-colors"><Info size={18} /></div>
                         </div>
                     </div>

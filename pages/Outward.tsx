@@ -5,6 +5,7 @@ import { Camera, Printer, Save, Maximize2, AlertCircle, Upload, RefreshCw } from
 import { v4 as uuidv4 } from 'uuid';
 import PrintChallan from '../components/PrintChallan';
 import { compressImage } from '../services/sheets';
+import ImageCropperModal from '../components/ImageCropperModal';
 
 interface OutwardProps {
   state: AppState;
@@ -40,6 +41,11 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
   const [isProcessingImage1, setIsProcessingImage1] = useState(false);
   const [isProcessingImage2, setIsProcessingImage2] = useState(false);
 
+  // Crop Modal State
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [cropTarget, setCropTarget] = useState<'photo' | 'labelImage' | null>(null);
+
   // Cleanup object URLs to prevent memory leaks
   useEffect(() => {
     return () => {
@@ -70,29 +76,47 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       const objectUrl = URL.createObjectURL(file);
-      
-      if (isSecond) {
-        setPreviewUrl2(objectUrl);
-        setIsProcessingImage2(true);
+      setCropImageSrc(objectUrl);
+      setCropTarget(isSecond ? 'labelImage' : 'photo');
+      setCropModalOpen(true);
+      // Reset input so the same file can be selected again
+      e.target.value = '';
+    }
+  };
+
+  const handleCropComplete = async (croppedFile: File) => {
+    setCropModalOpen(false);
+    const target = cropTarget;
+    setCropTarget(null);
+
+    if (!target) return;
+
+    const objectUrl = URL.createObjectURL(croppedFile);
+    if (target === 'labelImage') {
+      setPreviewUrl2(objectUrl);
+      setIsProcessingImage2(true);
+    } else {
+      setPreviewUrl(objectUrl);
+      setIsProcessingImage1(true);
+    }
+
+    try {
+      const compressed = await compressImage(croppedFile, 800, 0.6);
+      if (target === 'labelImage') {
+        setFormData(prev => ({ ...prev, labelImage: compressed }));
       } else {
-        setPreviewUrl(objectUrl);
-        setIsProcessingImage1(true);
+        setFormData(prev => ({ ...prev, photo: compressed }));
       }
+    } catch (err) {
+      console.error("Compression failed", err);
+    } finally {
+      if (target === 'labelImage') setIsProcessingImage2(false);
+      else setIsProcessingImage1(false);
       
-      try {
-          // PASS FILE DIRECTLY - Do not read as DataURL first
-          const compressed = await compressImage(file, 800, 0.6);
-          if (isSecond) {
-            setFormData(prev => ({ ...prev, labelImage: compressed }));
-          } else {
-            setFormData(prev => ({ ...prev, photo: compressed }));
-          }
-      } catch (err) {
-          console.error("Compression failed", err);
-      } finally {
-          if (isSecond) setIsProcessingImage2(false);
-          else setIsProcessingImage1(false);
+      if (cropImageSrc && !cropImageSrc.startsWith('data:')) {
+        URL.revokeObjectURL(cropImageSrc);
       }
+      setCropImageSrc(null);
     }
   };
 
@@ -148,7 +172,6 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
 
   const handlePrint = () => {
     setIsPrinting(true);
-    setTimeout(() => { window.print(); }, 100);
   };
 
   const vendorOptions = state.vendors.map(v => ({ id: v.id, label: v.name, sublabel: v.code }));
@@ -272,6 +295,20 @@ const Outward: React.FC<OutwardProps> = ({ state, onSave, onAddItem }) => {
            {isProcessingImage1 || isProcessingImage2 ? 'Processing Images...' : <><Save className="mr-2" size={18} /> Save Entry</>}
         </Button>
       </Card>
+
+      <ImageCropperModal
+        isOpen={cropModalOpen}
+        imageSrc={cropImageSrc}
+        onClose={() => {
+          setCropModalOpen(false);
+          if (cropImageSrc && !cropImageSrc.startsWith('data:')) {
+            URL.revokeObjectURL(cropImageSrc);
+          }
+          setCropImageSrc(null);
+          setCropTarget(null);
+        }}
+        onCropComplete={handleCropComplete}
+      />
     </div>
   );
 };
